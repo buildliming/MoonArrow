@@ -1,0 +1,5 @@
+import {
+  "shunge/arrow",
+}
+
+pkgtype(kind: "executable")
