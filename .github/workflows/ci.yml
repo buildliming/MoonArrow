@@ -1,0 +1,31 @@
+name: Arrow compatibility
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: hustcer/setup-moonbit@v1.22
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: moon version --all
+      - run: moon check --target all --deny-warn
+      - run: moon test --target all
+      - run: python -m pip install -r tools/requirements-interop.txt
+      - run: python tools/interop.py --target native
+      - run: python tools/interop.py --target js
+      - run: moon info
+      - run: moon fmt --check
