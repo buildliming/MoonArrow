@@ -1,0 +1,107 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "shunge/arrow"
+
+import {
+  "moonbitlang/core/debug",
+}
+
+// Values
+pub fn read_file(Bytes, limits? : ReadLimits) -> IpcData raise ArrowError
+
+pub fn read_stream(Bytes, limits? : ReadLimits) -> IpcData raise ArrowError
+
+pub fn write_file(Schema, Array[RecordBatch]) -> Bytes raise ArrowError
+
+pub fn write_stream(Schema, Array[RecordBatch]) -> Bytes raise ArrowError
+
+// Errors
+pub(all) suberror ArrowError {
+  Invalid(String)
+  Unsupported(String)
+  LimitExceeded(String)
+} derive(@debug.Debug)
+
+// Types and methods
+pub(all) enum Column {
+  Nulls(Int)
+  Booleans(Array[Bool?])
+  Int32s(Array[Int?])
+  Int64s(Array[Int64?])
+  Float64s(Array[Double?])
+  Strings(Array[String?])
+  Binaries(Array[Bytes?])
+} derive(@debug.Debug)
+pub fn Column::data_type(Self) -> DataType
+pub fn Column::length(Self) -> Int
+pub fn Column::null_count(Self) -> Int
+
+pub(all) enum DataType {
+  Null
+  Boolean
+  Int32
+  Int64
+  Float64
+  Utf8
+  Binary
+} derive(Eq, @debug.Debug)
+
+pub(all) struct Field {
+  name : String
+  data_type : DataType
+  nullable : Bool
+  metadata : Array[KeyValue]
+} derive(Eq, @debug.Debug)
+pub fn Field::new(String, DataType, nullable? : Bool, metadata? : Array[KeyValue]) -> Self
+
+pub struct FileReader {
+  schema : Schema
+  // private fields
+}
+pub fn FileReader::get_batch(Self, Int) -> RecordBatch raise ArrowError
+pub fn FileReader::new(Bytes, limits? : ReadLimits) -> Self raise ArrowError
+pub fn FileReader::num_batches(Self) -> Int
+
+pub struct IpcData {
+  schema : Schema
+  batches : Array[RecordBatch]
+} derive(@debug.Debug)
+
+pub(all) struct KeyValue {
+  key : String
+  value : String?
+} derive(Eq, @debug.Debug)
+
+pub(all) struct ReadLimits {
+  max_rows_per_batch : Int
+  max_values_per_batch : Int
+  max_fields : Int
+  max_batches : Int
+  max_metadata_bytes : Int
+  max_body_bytes : Int
+} derive(@debug.Debug)
+pub fn ReadLimits::default() -> Self
+
+pub struct RecordBatch {
+  schema : Schema
+  columns : Array[Column]
+  num_rows : Int
+} derive(@debug.Debug)
+pub fn RecordBatch::new(Schema, Array[Column], num_rows? : Int) -> Self raise ArrowError
+pub fn RecordBatch::validate(Self) -> Unit raise ArrowError
+
+pub(all) struct Schema {
+  fields : Array[Field]
+  metadata : Array[KeyValue]
+} derive(Eq, @debug.Debug)
+pub fn Schema::new(Array[Field], metadata? : Array[KeyValue]) -> Self
+
+pub struct StreamReader {
+  schema : Schema
+  // private fields
+}
+pub fn StreamReader::new(Bytes, limits? : ReadLimits) -> Self raise ArrowError
+pub fn StreamReader::next(Self) -> RecordBatch? raise ArrowError
+
+// Type aliases
+
+// Traits
