@@ -1,0 +1,6 @@
+import {
+  "shunge/arrow",
+  "moonbitlang/core/env",
+}
+
+pkgtype(kind: "executable")
