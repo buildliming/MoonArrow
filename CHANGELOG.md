@@ -18,8 +18,7 @@
 
 This version implements a subset of Arrow IPC. Nested types, dictionaries,
 compression, temporal types, additional numeric types, zero-copy views and
-network streaming are not implemented. The module has not been published to
-Mooncakes. See `docs/FORMAT.md` for the complete supported contract.
+network streaming are not implemented. The Mooncakes module name is `shunge/arrow`. See `docs/FORMAT.md` for the complete supported contract.
 
 The existing repository history and MIT license are retained. The first code
 delivery is split into ten commits documented in `docs/INITIAL_COMMITS.zh-CN.md`.

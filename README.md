@@ -11,7 +11,7 @@ A pure MoonBit implementation of a focused Apache Arrow IPC subset, with no
 Arrow C/C++ runtime or FFI dependency. PyArrow is used only as a test oracle.
 
 > **状态：0.1.0 初始实现。** 当前覆盖下表中的类型和功能，尚未实现完整 Arrow
-> 规范，也尚未发布到 Mooncakes。项目名称为 MoonArrow，模块名暂保留 `shunge/arrow`。
+> 规范。项目名称为 MoonArrow，Mooncakes 模块名为 `shunge/arrow`。
 
 ## 能力与边界
 
@@ -27,6 +27,15 @@ Arrow C/C++ runtime or FFI dependency. PyArrow is used only as a test oracle.
 目前未支持嵌套类型、字典编码、压缩、时间/日期、其他数值类型和零拷贝访问。
 Reader 接收完整 `Bytes`，不执行文件或网络 I/O；逐批解码不等于网络增量解析。
 详细限制见[格式契约](docs/FORMAT.md)。
+
+## 安装到现有项目
+
+```sh
+moon add shunge/arrow@0.1.0
+```
+
+在 `moon.pkg` 中导入 `shunge/arrow`，详见[使用指南](README.mbt.md)。
+[Mooncakes 模块页面](https://mooncakes.io/docs/shunge/arrow)
 
 ## 快速运行
 

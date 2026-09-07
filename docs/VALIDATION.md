@@ -29,4 +29,4 @@ performance benchmarks have not been measured. Initial Native compilation
 emitted a warning about `rand_s` in the installed MoonBit runtime's `env.c`;
 the project type checker reported no warnings and Native tests passed.
 
-Source repository: https://github.com/buildliming/MoonArrow. Registry publication and contest submission have not been performed.
+Source repository: https://github.com/buildliming/MoonArrow. Registry versions are listed at https://mooncakes.io/docs/shunge/arrow. Contest submission has not been performed.

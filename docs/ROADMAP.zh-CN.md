@@ -35,7 +35,7 @@
    当前没有性能测量，不宣称零拷贝或高于其他实现。
 3. 吸收至少一个下游使用反馈，稳定公开 API。
 4. 复核模块所有权、仓库与 Mooncakes 元数据，发布版本并准备参赛说明。
-   远端仓库为 buildliming/MoonArrow；尚未发布 Mooncakes 包或提交比赛。
+   远端仓库为 buildliming/MoonArrow，Mooncakes 模块为 shunge/arrow；比赛尚未提交。
 
 ## 并行计算的衔接
 

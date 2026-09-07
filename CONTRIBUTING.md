@@ -28,5 +28,6 @@ creates deterministic PyArrow cases and checks both decoding and re-encoding.
 `--fixtures-dir PATH` optionally saves input fixtures under a local output path.
 
 Before publishing, review module ownership/name, generated public interfaces,
-README support claims, test results and the license. The initial version is
-local; no registry publication or contest submission is implied by CI passing.
+README support claims, test results and the license. Use `moon publish --dry-run`
+to validate the packaged source before `moon publish`. Registry publication and
+contest submission are separate actions; CI passing does not perform either.

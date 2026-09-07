@@ -2,7 +2,7 @@
 
 `shunge/arrow` 是纯 MoonBit 实现的 Apache Arrow IPC 读写库，让 MoonBit
 程序通过标准列式数据格式与 Python 等数据工具交换数据。
-当前是 0.1.0 初始实现，项目尚未发布到 Mooncakes。
+当前版本为 0.1.0，模块名为 `shunge/arrow`，项目名称为 MoonArrow（月矢）。
 
 生产代码只依赖 MoonBit 标准库，不依赖 PyArrow、Arrow C++ 或 FFI。
 PyArrow 仅用于开发时的独立互操作测试。
@@ -22,7 +22,22 @@ PyArrow 仅用于开发时的独立互操作测试。
 ## 快速示例
 
 以下代码块会由 MoonBit 文档测试执行。在本仓库中运行不需要先发布包。
-其他项目使用时，在 `moon.pkg` 中导入 `shunge/arrow`，并配置相应模块依赖。
+在其他 MoonBit 项目中安装：
+
+```sh
+moon add shunge/arrow@0.1.0
+```
+
+然后在调用方的 `moon.pkg` 中导入 `shunge/arrow`：
+
+```text
+import {
+  "shunge/arrow",
+}
+```
+
+[Mooncakes 模块页面](https://mooncakes.io/docs/shunge/arrow) ·
+[GitHub 源码](https://github.com/buildliming/MoonArrow)
 
 ```mbt check
 ///|
