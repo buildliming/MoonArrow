@@ -40,7 +40,11 @@ fn encode_field(out : Array[Byte], field : Field) -> Int {
     let f = fb_table(out, 7)
     fb_ref(out, f, 0, fb_string(out, field.name))
     fb_int(out, f, 1, if field.nullable { 1 } else { 0 })
-    let (tag, width, signed) = match field.data_type {
+    let value_type = match field.data_type {
+      Dictionary(_, inner, _) => inner
+      other => other
+    }
+    let (tag, width, signed) = match value_type {
       Null => (1, 0, 0)
       Int8 => (2, 8, 1)
       Int16 => (2, 16, 1)
@@ -58,6 +62,7 @@ fn encode_field(out : Array[Byte], field : Field) -> Int {
       Duration(_) => (18, 0, 0)
       List => (12, 0, 0)
       Struct => (13, 0, 0)
+      Dictionary(_, _, _) => (0, 0, 0)
       Binary => (4, 0, 0)
       Utf8 => (5, 0, 0)
       Boolean => (6, 0, 0)
@@ -73,16 +78,26 @@ fn encode_field(out : Array[Byte], field : Field) -> Int {
     } else if tag == 8 {
       fb_int(out, t, 0, width)
     } else if tag == 10 {
-      if field.data_type is Timestamp(unit, timezone) {
+      if value_type is Timestamp(unit, timezone) {
         fb_int(out, t, 0, time_unit_code(unit))
         if timezone is Some(name) {
           fb_ref(out, t, 1, fb_string(out, name))
         }
       }
     } else if tag == 18 {
-      if field.data_type is Duration(unit) {
+      if value_type is Duration(unit) {
         fb_int(out, t, 0, time_unit_code(unit))
       }
+    }
+    if field.data_type is Dictionary(id, _, ordered) {
+      let dictionary = fb_table(out, 4)
+      fb_ref(out, f, 4, dictionary.pos)
+      fb_long(out, dictionary, 0, id)
+      let index_type = fb_table(out, 2)
+      fb_ref(out, dictionary, 1, index_type.pos)
+      fb_int(out, index_type, 0, 32)
+      fb_int(out, index_type, 1, 1)
+      fb_int(out, dictionary, 2, if ordered { 1 } else { 0 })
     }
     if !field.metadata.is_empty() {
       fb_ref(out, f, 6, encode_metadata(out, field.metadata))
@@ -100,8 +115,8 @@ fn encode_field(out : Array[Byte], field : Field) -> Int {
 }
 
 ///|
-fn encode_schema(out : Array[Byte], schema : Schema) -> Int {
-  let table = fb_table(out, 3)
+fn encode_schema(out : Array[Byte], schema : Schema, replacement? : Bool = false) -> Int {
+  let table = fb_table(out, 4)
   let fields = fb_vector(out, schema.fields.length(), 4, 4)
   fb_ref(out, table, 1, fields)
   for i in 0..<schema.fields.length() {
@@ -111,6 +126,11 @@ fn encode_schema(out : Array[Byte], schema : Schema) -> Int {
   }
   if !schema.metadata.is_empty() {
     fb_ref(out, table, 2, encode_metadata(out, schema.metadata))
+  }
+  if replacement {
+    let features = fb_vector(out, 1, 8, 8)
+    fb_ref(out, table, 3, features)
+    put_i64(out, features + 4, 1L)
   }
   table.pos
 }
@@ -126,14 +146,11 @@ fn decode_field(data : Bytes, f : Int, limits : ReadLimits, depth : Int) -> (Fie
     if nullable > 1 {
       raise Invalid("invalid nullable flag")
     }
-    if field_ref(data, f, 4) is Some(_) {
-      raise Unsupported("dictionary encoding")
-    }
     let tag = field_int(data, f, 2, 1, 0)
     let t = required_ref(data, f, 3)
     // Validate even an empty type table before using its tag.
     ignore(table_field(data, t, 0, 1))
-    let data_type = match tag {
+    let value_type = match tag {
       1 => DataType::Null
       2 => {
         let signed = field_int(data, t, 1, 1, 0)
@@ -175,6 +192,24 @@ fn decode_field(data : Bytes, f : Int, limits : ReadLimits, depth : Int) -> (Fie
       13 => Struct
       _ => raise Unsupported("Arrow type tag " + tag.to_string())
     }
+    let data_type = match field_ref(data, f, 4) {
+      None => value_type
+      Some(dictionary) => {
+        if value_type != Utf8 && value_type != Binary {
+          raise Unsupported("dictionary value type")
+        }
+        let index = required_ref(data, dictionary, 1)
+        if field_int(data, index, 0, 4, 0) != 32 ||
+          field_int(data, index, 1, 1, 0) != 1 {
+          raise Unsupported("dictionary index type")
+        }
+        let ordered = field_int(data, dictionary, 2, 1, 0)
+        if ordered > 1 || field_int(data, dictionary, 3, 2, 0) != 0 {
+          raise Unsupported("dictionary ordering or kind")
+        }
+        Dictionary(field_long(data, dictionary, 0), value_type, ordered == 1)
+      }
+    }
     let (p, n) = vector_info(data, f, 5, 4, limits.max_fields)
     if (data_type == List && n != 1) ||
       (data_type != List && data_type != Struct && n != 0) {
@@ -206,9 +241,11 @@ fn decode_schema(
   if field_int(data, table, 0, 2, 0) != 0 {
     raise Unsupported("big-endian schema")
   }
-  let (_, features) = vector_info(data, table, 3, 8, limits.max_fields)
-  if features != 0 {
-    raise Unsupported("schema features (compression or dictionary replacement)")
+  let (feature_base, features) = vector_info(data, table, 3, 8, limits.max_fields)
+  for i in 0..<features {
+    if read_i64(data, feature_base + i * 8) != 1L {
+      raise Unsupported("schema feature")
+    }
   }
   let (p, n) = vector_info(data, table, 1, 4, limits.max_fields)
   let fields = []
@@ -276,13 +313,13 @@ fn encode_batch_header(
 }
 
 ///|
-fn schema_message(schema : Schema) -> Bytes {
+fn schema_message(schema : Schema, replacement? : Bool = false) -> Bytes {
   let out : Array[Byte] = [b'\x00', b'\x00', b'\x00', b'\x00']
   let message = fb_table(out, 4)
   put_i32(out, 0, message.pos)
   fb_int(out, message, 0, 4) // MetadataVersion::V5
   fb_int(out, message, 1, 1) // MessageHeader::Schema
-  fb_ref(out, message, 2, encode_schema(out, schema))
+  fb_ref(out, message, 2, encode_schema(out, schema, replacement~))
   align_bytes(out, 8)
   Bytes::from_array(out)
 }

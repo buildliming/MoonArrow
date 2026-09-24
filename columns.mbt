@@ -103,6 +103,9 @@ fn encode_column(
         }
         return
       }
+      Dictionaries(indices, _, _, _) => for index in indices {
+        put_i32(values, reserve(values, 4), index.unwrap_or(0))
+      }
       Strings(_) | Binaries(_) => {
         let offsets : Array[Byte] = []
         put_i32(offsets, reserve(offsets, 4), 0)
@@ -175,6 +178,7 @@ fn field_layout(field : Field) -> (Int, Int) {
     Utf8 | Binary => 3
     List => 2
     Struct => 1
+    Dictionary(_, _, _) => 2
     _ => 2
   }
   for child in field.children {
@@ -201,6 +205,7 @@ fn decode_column(
   cursor : BodyCursor,
   limits : ReadLimits,
   depth : Int,
+  dictionaries : Array[DictionaryEntry],
 ) -> Column raise ArrowError {
   if depth > limits.max_depth { raise LimitExceeded("nested column depth") }
   if cursor.node >= cursor.node_count { raise Invalid("missing field node") }
@@ -247,18 +252,25 @@ fn decode_column(
       offsets.push(current)
       previous = current
     }
-    let child = decode_column(frame, field.children[0], -1, cursor, limits, depth + 1)
+    let child = decode_column(frame, field.children[0], -1, cursor, limits, depth + 1, dictionaries)
     if previous > child.length() { raise Invalid("List offset exceeds child length") }
     return Lists(offsets, valid, child)
   }
   if field.data_type == Struct {
     let children = []
     for child_field in field.children {
-      children.push(decode_column(frame, child_field, rows, cursor, limits, depth + 1))
+      children.push(decode_column(frame, child_field, rows, cursor, limits, depth + 1, dictionaries))
     }
     return Structs(valid, children)
   }
   let values = next_body_buffer(frame, cursor)
+  if field.data_type is Dictionary(id, _, ordered) {
+    if rows > values.length() / 4 { raise Invalid("short dictionary index buffer") }
+    let indices = Array::makei(rows, j => if valid[j] {
+      Some(read_i32(values, j * 4))
+    } else { None })
+    return Dictionaries(indices, dictionary_value(dictionaries, id), id, ordered)
+  }
   match field.data_type {
     Null => Column::Nulls(rows)
     Boolean => {
@@ -418,6 +430,7 @@ fn decode_column(
       }
     }
     List | Struct => raise Invalid("internal nested dispatch")
+    Dictionary(_, _, _) => raise Invalid("internal dictionary dispatch")
   }
 
 }
@@ -427,6 +440,7 @@ fn decode_body(
   frame : Frame,
   schema : Schema,
   limits : ReadLimits,
+  dictionaries : Array[DictionaryEntry],
 ) -> RecordBatch raise ArrowError {
   if frame.kind != 3 { raise Unsupported("expected RecordBatch message") }
   let metadata = frame.metadata
@@ -462,7 +476,7 @@ fn decode_body(
   }
   let columns = []
   for field in schema.fields {
-    columns.push(decode_column(frame, field, rows, cursor, limits, 0))
+    columns.push(decode_column(frame, field, rows, cursor, limits, 0, dictionaries))
   }
   if cursor.node != node_count || cursor.buffer != buffer_count {
     raise Invalid("unused field node or buffer")

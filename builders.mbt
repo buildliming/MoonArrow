@@ -39,7 +39,7 @@ fn empty_column(data_type : DataType) -> Column raise ArrowError {
     Date64 => Date64s([])
     Timestamp(unit, timezone) => Timestamps([], unit, timezone)
     Duration(unit) => Durations([], unit)
-    List | Struct => raise Unsupported("row builder for nested fields")
+    List | Struct | Dictionary(_, _, _) => raise Unsupported("row builder for nested or dictionary fields")
     Utf8 => Strings([])
     Binary => Binaries([])
   }

@@ -56,6 +56,9 @@ fn Column::take_checked(self : Column, indices : Array[Int]) -> Column {
     }
     Structs(validity, children) => Structs(take_values(validity, indices),
       children.map(child => child.take_checked(indices)))
+    Dictionaries(indices_array, values, id, ordered) => Dictionaries(
+      take_values(indices_array, indices),
+      values.take_checked(Array::makei(values.length(), i => i)), id, ordered)
     Strings(a) => Strings(take_values(a, indices))
     Binaries(a) => Binaries(take_values(a, indices))
   }
@@ -95,6 +98,18 @@ fn Column::append_checked(self : Column, other : Column) -> Column raise ArrowEr
       let children = []
       for i in 0..<ac.length() { children.push(ac[i].append_checked(bc[i])) }
       Structs(append_values(av, bv), children)
+    }
+    (Dictionaries(a, av, id, ordered), Dictionaries(b, bv, _, _)) => {
+      if dictionary_equal(av, bv) {
+        Dictionaries(append_values(a, b), av, id, ordered)
+      } else {
+        let base = av.length()
+        let shifted = b.map(index => match index {
+          Some(i) => Some(i + base)
+          None => None
+        })
+        Dictionaries(append_values(a, shifted), av.append_checked(bv), id, ordered)
+      }
     }
     (Strings(a), Strings(b)) => Strings(append_values(a, b))
     (Binaries(a), Binaries(b)) => Binaries(append_values(a, b))

@@ -36,6 +36,7 @@ pub(all) enum DataType {
   Duration(TimeUnit)
   List
   Struct
+  Dictionary(Int64, DataType, Bool)
   Utf8
   Binary
 } derive(Eq, Debug)
@@ -105,6 +106,7 @@ pub(all) enum Column {
   Durations(Array[Int64?], TimeUnit)
   Lists(Array[Int], Array[Bool], Column)
   Structs(Array[Bool], Array[Column])
+  Dictionaries(Array[Int?], Column, Int64, Bool)
   Strings(Array[String?])
   Binaries(Array[Bytes?])
 } derive(Debug)
@@ -130,6 +132,7 @@ pub fn Column::length(self : Column) -> Int {
     Durations(a, _) => a.length()
     Lists(offsets, _, _) => offsets.length() - 1
     Structs(validity, _) => validity.length()
+    Dictionaries(indices, _, _, _) => indices.length()
     Strings(a) => a.length()
     Binaries(a) => a.length()
   }
@@ -156,6 +159,7 @@ pub fn Column::data_type(self : Column) -> DataType {
     Durations(_, unit) => Duration(unit)
     Lists(_, _, _) => List
     Structs(_, _) => Struct
+    Dictionaries(_, values, id, ordered) => Dictionary(id, values.data_type(), ordered)
     Strings(_) => Utf8
     Binaries(_) => Binary
   }
@@ -182,6 +186,7 @@ fn Column::valid_at(self : Column, i : Int) -> Bool {
     Durations(a, _) => a[i] is Some(_)
     Lists(_, validity, _) => validity[i]
     Structs(validity, _) => validity[i]
+    Dictionaries(indices, _, _, _) => indices[i] is Some(_)
     Strings(a) => a[i] is Some(_)
     Binaries(a) => a[i] is Some(_)
   }
@@ -288,6 +293,16 @@ fn validate_nested(field : Field, column : Column, depth : Int) -> Unit raise Ar
           raise Invalid("Struct child length, type or nullability mismatch")
         }
         validate_nested(child_field, child, depth + 1)
+      }
+    }
+    (Dictionary(_, value_type, _), Dictionaries(indices, values, _, _)) => {
+      if (value_type != Utf8 && value_type != Binary) || values.data_type() != value_type {
+        raise Unsupported("dictionary values must be Utf8 or Binary")
+      }
+      for index in indices {
+        if index is Some(i) && (i < 0 || i >= values.length()) {
+          raise Invalid("dictionary index outside values")
+        }
       }
     }
     (List, _) | (Struct, _) => raise Invalid("nested column type mismatch")

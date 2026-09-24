@@ -50,7 +50,10 @@ def normalize(schema, batches):
                         value = str(struct.unpack("<i", struct.pack("<f", value))[0])
                     elif pa.types.is_float64(field.type):
                         value = str(struct.unpack("<q", struct.pack("<d", value))[0])
-                    elif pa.types.is_binary(field.type):
+                    elif pa.types.is_binary(field.type) or (
+                        pa.types.is_dictionary(field.type) and
+                        pa.types.is_binary(field.type.value_type)
+                    ):
                         value = value.hex()
                 values.append(value)
             columns.append(values)
@@ -148,6 +151,28 @@ def nested_case():
     return schema, [pa.RecordBatch.from_arrays(columns, schema=schema)]
 
 
+def dictionary_case():
+    dictionary_type = pa.dictionary(pa.int32(), pa.string())
+    schema = pa.schema([pa.field("category", dictionary_type)])
+    words = pa.array(["red", "green", "blue"])
+    first = pa.DictionaryArray.from_arrays(pa.array([0, 1, None, 0], type=pa.int32()), words)
+    second = pa.DictionaryArray.from_arrays(pa.array([2, 1, 0], type=pa.int32()), words)
+    return schema, [pa.RecordBatch.from_arrays([first], schema=schema),
+                    pa.RecordBatch.from_arrays([second], schema=schema)]
+
+
+def dictionary_replacement_case():
+    typ = pa.dictionary(pa.int32(), pa.string())
+    schema = pa.schema([pa.field("category", typ)])
+    result = []
+    for words, indices in [(["red", "green"], [0, 1, None]),
+                           (["blue", "green"], [0, 1, 0])]:
+        col = pa.DictionaryArray.from_arrays(pa.array(indices, type=pa.int32()),
+                                              pa.array(words))
+        result.append(pa.RecordBatch.from_arrays([col], schema=schema))
+    return schema, result
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--skip-build", action="store_true")
@@ -213,6 +238,18 @@ def main():
     for kind in ["stream", "file"]:
         verify(schema, batches, write_arrow(schema, batches, kind), kind, "nested")
 
+    schema, batches = dictionary_case()
+    for kind in ["stream", "file"]:
+        verify(schema, batches, write_arrow(schema, batches, kind), kind, "dictionary")
+
+    schema, batches = dictionary_replacement_case()
+    raw = write_arrow(schema, batches, "stream")
+    result = call("stream", raw)
+    assert result["data"] == normalize(schema, batches), ("dictionary replacement", result)
+    assert read_arrow(bytes.fromhex(result["stream"]), "stream") == normalize(schema, batches)
+    assert result["file"] is None
+    checks += 3
+
     schema, batches = generated_case(123, 9)
     for version in [pa.ipc.MetadataVersion.V4, pa.ipc.MetadataVersion.V5]:
         options = pa.ipc.IpcWriteOptions(metadata_version=version, use_legacy_format=True)
@@ -230,7 +267,7 @@ def main():
     for kind in ["stream", "file"]:
         verify(schema, batches, write_arrow(schema, batches, kind), kind, "sliced")
 
-    unsupported = [pa.array(["a", "b"]).dictionary_encode()]
+    unsupported = [pa.array([1, 2], type=pa.decimal128(10, 0))]
     for array in unsupported:
         batch = pa.RecordBatch.from_arrays([array], names=["unsupported"])
         result = call("stream", write_arrow(batch.schema, [batch], "stream"))

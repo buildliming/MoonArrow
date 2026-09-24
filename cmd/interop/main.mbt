@@ -87,6 +87,11 @@ fn field_type_string(field : @arrow.Field) -> String {
     Duration(unit) => "duration[" + time_unit_string(unit) + "]"
     Utf8 => "string"
     Binary => "binary"
+    Dictionary(_, value_type, ordered) => {
+      let inner = if value_type == Utf8 { "string" } else { "binary" }
+      "dictionary<values=" + inner + ", indices=int32, ordered=" +
+      (if ordered { "1" } else { "0" }) + ">"
+    }
     List => "list<" + child_type_string(field.children[0]) + ">"
     Struct => {
       let parts = field.children.map(child => child_type_string(child))
@@ -173,6 +178,10 @@ fn cell_json(column : @arrow.Column, field : @arrow.Field, i : Int) -> Json {
         members[field.children[j].name] = cell_json(children[j], field.children[j], i)
       }
       Json::object(members)
+    }
+    Dictionaries(indices, values, _, _) => match indices[i] {
+      None => Json::null()
+      Some(index) => cell_json(values, @arrow.Field::new("value", values.data_type()), index)
     }
   }
 }
@@ -262,7 +271,11 @@ fn main {
     Json::object({
       "data": data_json(data),
       "stream": hex(@arrow.write_stream(data.schema, data.batches)).to_json(),
-      "file": hex(@arrow.write_file(data.schema, data.batches)).to_json(),
+      "file": (try {
+        hex(@arrow.write_file(data.schema, data.batches)).to_json()
+      } catch {
+        _ => Json::null()
+      }),
     })
   } catch {
     error => Json::object({ "error": error.to_string().to_json() })
