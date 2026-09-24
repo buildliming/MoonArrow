@@ -97,6 +97,18 @@ fn encode_column(
         encode_column(body, nodes, buffers, child)
         return
       }
+      LargeLists(offsets, _, child) => {
+        for offset in offsets {
+          put_i64(values, reserve(values, 8), offset.to_int64())
+        }
+        add_buffer(body, buffers, Bytes::from_array(values))
+        encode_column(body, nodes, buffers, child)
+        return
+      }
+      FixedLists(_, child, _) => {
+        encode_column(body, nodes, buffers, child)
+        return
+      }
       Structs(_, children) => {
         for child in children {
           encode_column(body, nodes, buffers, child)
@@ -106,9 +118,17 @@ fn encode_column(
       Dictionaries(indices, _, _, _) => for index in indices {
         put_i32(values, reserve(values, 4), index.unwrap_or(0))
       }
-      Strings(_) | Binaries(_) => {
+      FixedBinaries(a, width) => for value in a {
+        match value {
+          Some(bytes) => append_bytes(values, bytes)
+          None => ignore(reserve(values, width))
+        }
+      }
+      Strings(_) | Binaries(_) | LargeStrings(_) | LargeBinaries(_) => {
         let offsets : Array[Byte] = []
-        put_i32(offsets, reserve(offsets, 4), 0)
+        let large = column is LargeStrings(_) || column is LargeBinaries(_)
+        if large { put_i64(offsets, reserve(offsets, 8), 0L) }
+        else { put_i32(offsets, reserve(offsets, 4), 0) }
         for i in 0..<n {
           let bytes = match column {
             Strings(a) =>
@@ -117,13 +137,19 @@ fn encode_column(
                 None => b""
               }
             Binaries(a) => a[i].unwrap_or(b"")
+            LargeStrings(a) => match a[i] {
+              Some(s) => @utf8.encode(s)
+              None => b""
+            }
+            LargeBinaries(a) => a[i].unwrap_or(b"")
             _ => b""
           }
           if bytes.length() > 0x7fffffff - values.length() {
             raise LimitExceeded("32-bit binary offsets")
           }
           append_bytes(values, bytes)
-          put_i32(offsets, reserve(offsets, 4), values.length())
+          if large { put_i64(offsets, reserve(offsets, 8), values.length().to_int64()) }
+          else { put_i32(offsets, reserve(offsets, 4), values.length()) }
         }
         add_buffer(body, buffers, Bytes::from_array(offsets))
       }
@@ -175,10 +201,10 @@ fn field_layout(field : Field) -> (Int, Int) {
   let mut nodes = 1
   let mut buffers = match field.data_type {
     Null => 0
-    Utf8 | Binary => 3
-    List => 2
-    Struct => 1
-    Dictionary(_, _, _) => 2
+    Utf8 | Binary | LargeUtf8 | LargeBinary => 3
+    List | LargeList => 2
+    Struct | FixedSizeList(_) => 1
+    Dictionary(_, _, _) | FixedSizeBinary(_) => 2
     _ => 2
   }
   for child in field.children {
@@ -238,22 +264,29 @@ fn decode_column(
     if !bit { actual_nulls += 1 }
   }
   if actual_nulls != nulls { raise Invalid("null count does not match validity bitmap") }
-  if field.data_type == List {
+  if field.data_type == List || field.data_type == LargeList {
     if field.children.length() != 1 { raise Invalid("List requires one child") }
     let offsets_bytes = next_body_buffer(frame, cursor)
-    if rows >= offsets_bytes.length() / 4 { raise Invalid("short List offsets") }
+    let width = if field.data_type == LargeList { 8 } else { 4 }
+    if rows >= offsets_bytes.length() / width { raise Invalid("short List offsets") }
     let offsets = []
-    let mut previous = read_i32(offsets_bytes, 0)
+    let mut previous = if width == 8 {
+      bounded_i64(read_i64(offsets_bytes, 0), limits.max_values_per_batch, "LargeList offset")
+    } else { read_i32(offsets_bytes, 0) }
     if previous < 0 { raise Invalid("negative List offset") }
     offsets.push(previous)
     for i in 0..<rows {
-      let current = read_i32(offsets_bytes, (i + 1) * 4)
+      let current = if width == 8 {
+        bounded_i64(read_i64(offsets_bytes, (i + 1) * 8),
+          limits.max_values_per_batch, "LargeList offset")
+      } else { read_i32(offsets_bytes, (i + 1) * 4) }
       if current < previous { raise Invalid("non-monotonic List offsets") }
       offsets.push(current)
       previous = current
     }
     let child = decode_column(frame, field.children[0], -1, cursor, limits, depth + 1, dictionaries)
     if previous > child.length() { raise Invalid("List offset exceeds child length") }
+    if field.data_type == LargeList { return LargeLists(offsets, valid, child) }
     return Lists(offsets, valid, child)
   }
   if field.data_type == Struct {
@@ -262,6 +295,14 @@ fn decode_column(
       children.push(decode_column(frame, child_field, rows, cursor, limits, depth + 1, dictionaries))
     }
     return Structs(valid, children)
+  }
+  if field.data_type is FixedSizeList(size) {
+    if field.children.length() != 1 || rows > limits.max_values_per_batch / size {
+      raise LimitExceeded("FixedSizeList child values")
+    }
+    let child = decode_column(frame, field.children[0], rows * size,
+      cursor, limits, depth + 1, dictionaries)
+    return FixedLists(valid, child, size)
   }
   let values = next_body_buffer(frame, cursor)
   if field.data_type is Dictionary(id, _, ordered) {
@@ -388,23 +429,35 @@ fn decode_column(
         _ => raise Invalid("internal temporal type")
       }
     }
-    Utf8 | Binary => {
+    FixedSizeBinary(width) => {
+      if rows > values.length() / width { raise Invalid("short fixed binary buffer") }
+      FixedBinaries(Array::makei(rows, j => if valid[j] {
+        Some(slice_bytes(values, j * width, width))
+      } else { None }), width)
+    }
+    Utf8 | Binary | LargeUtf8 | LargeBinary => {
       let bytes = next_body_buffer(frame, cursor)
-      if rows >= values.length() / 4 {
+      let large = field.data_type == LargeUtf8 || field.data_type == LargeBinary
+      let offset_width = if large { 8 } else { 4 }
+      if rows >= values.length() / offset_width {
         raise Invalid("short offsets buffer")
       }
       let strings = []
       let binaries = []
-      let mut start = read_i32(values, 0)
+      let mut start = if large {
+        bounded_i64(read_i64(values, 0), bytes.length(), "large binary offset")
+      } else { read_i32(values, 0) }
       if start < 0 || start > bytes.length() {
         raise Invalid("invalid first binary offset")
       }
       for j in 0..<rows {
-        let end = read_i32(values, (j + 1) * 4)
+        let end = if large {
+          bounded_i64(read_i64(values, (j + 1) * 8), bytes.length(), "large binary offset")
+        } else { read_i32(values, (j + 1) * 4) }
         if end < start || end > bytes.length() {
           raise Invalid("non-monotonic or out-of-range offset")
         }
-        if field.data_type == Utf8 {
+        if field.data_type == Utf8 || field.data_type == LargeUtf8 {
           strings.push(
             if valid[j] {
               Some(decode_utf8(bytes, start, end - start))
@@ -423,13 +476,16 @@ fn decode_column(
         }
         start = end
       }
-      if field.data_type == Utf8 {
-        Strings(strings)
-      } else {
-        Binaries(binaries)
+      match field.data_type {
+        Utf8 => Strings(strings)
+        LargeUtf8 => LargeStrings(strings)
+        Binary => Binaries(binaries)
+        LargeBinary => LargeBinaries(binaries)
+        _ => raise Invalid("internal variable binary type")
       }
     }
-    List | Struct => raise Invalid("internal nested dispatch")
+    List | LargeList | FixedSizeList(_) | Struct =>
+      raise Invalid("internal nested dispatch")
     Dictionary(_, _, _) => raise Invalid("internal dictionary dispatch")
   }
 

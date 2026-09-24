@@ -87,12 +87,18 @@ fn field_type_string(field : @arrow.Field) -> String {
     Duration(unit) => "duration[" + time_unit_string(unit) + "]"
     Utf8 => "string"
     Binary => "binary"
+    LargeUtf8 => "large_string"
+    LargeBinary => "large_binary"
+    FixedSizeBinary(width) => "fixed_size_binary[" + width.to_string() + "]"
     Dictionary(_, value_type, ordered) => {
       let inner = if value_type == Utf8 { "string" } else { "binary" }
       "dictionary<values=" + inner + ", indices=int32, ordered=" +
       (if ordered { "1" } else { "0" }) + ">"
     }
     List => "list<" + child_type_string(field.children[0]) + ">"
+    LargeList => "large_list<" + child_type_string(field.children[0]) + ">"
+    FixedSizeList(size) => "fixed_size_list<" + child_type_string(field.children[0]) +
+      ">[" + size.to_string() + "]"
     Struct => {
       let parts = field.children.map(child => child_type_string(child))
       "struct<" + parts.join(", ") + ">"
@@ -163,11 +169,35 @@ fn cell_json(column : @arrow.Column, field : @arrow.Field, i : Int) -> Json {
       Some(x) => Json::string(hex(x))
       None => Json::null()
     }
+    LargeStrings(a) => match a[i] {
+      Some(x) => x.to_json()
+      None => Json::null()
+    }
+    LargeBinaries(a) | FixedBinaries(a, _) => match a[i] {
+      Some(x) => Json::string(hex(x))
+      None => Json::null()
+    }
     Lists(offsets, validity, child) => {
       if !validity[i] { return Json::null() }
       let items = []
       for j in offsets[i]..<offsets[i + 1] {
         items.push(cell_json(child, field.children[0], j))
+      }
+      Json::array(items)
+    }
+    LargeLists(offsets, validity, child) => {
+      if !validity[i] { return Json::null() }
+      let items = []
+      for j in offsets[i]..<offsets[i + 1] {
+        items.push(cell_json(child, field.children[0], j))
+      }
+      Json::array(items)
+    }
+    FixedLists(validity, child, size) => {
+      if !validity[i] { return Json::null() }
+      let items = []
+      for j in 0..<size {
+        items.push(cell_json(child, field.children[0], i * size + j))
       }
       Json::array(items)
     }

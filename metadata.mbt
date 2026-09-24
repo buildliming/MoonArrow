@@ -61,14 +61,19 @@ fn encode_field(out : Array[Byte], field : Field) -> Int {
       Timestamp(_, _) => (10, 0, 0)
       Duration(_) => (18, 0, 0)
       List => (12, 0, 0)
+      LargeList => (21, 0, 0)
+      FixedSizeList(size) => (16, size, 0)
       Struct => (13, 0, 0)
       Dictionary(_, _, _) => (0, 0, 0)
       Binary => (4, 0, 0)
       Utf8 => (5, 0, 0)
+      LargeBinary => (19, 0, 0)
+      LargeUtf8 => (20, 0, 0)
+      FixedSizeBinary(width) => (15, width, 0)
       Boolean => (6, 0, 0)
     }
     fb_int(out, f, 2, tag)
-    let t = fb_table(out, if tag == 2 || tag == 10 { 2 } else if tag == 3 || tag == 8 || tag == 18 { 1 } else { 0 })
+    let t = fb_table(out, if tag == 2 || tag == 10 { 2 } else if tag == 3 || tag == 8 || tag == 18 || tag == 15 || tag == 16 { 1 } else { 0 })
     fb_ref(out, f, 3, t.pos)
     if tag == 2 {
       fb_int(out, t, 0, width)
@@ -88,6 +93,10 @@ fn encode_field(out : Array[Byte], field : Field) -> Int {
       if value_type is Duration(unit) {
         fb_int(out, t, 0, time_unit_code(unit))
       }
+    } else if tag == 15 {
+      fb_int(out, t, 0, width)
+    } else if tag == 16 {
+      fb_int(out, t, 0, width)
     }
     if field.data_type is Dictionary(id, _, ordered) {
       let dictionary = fb_table(out, 4)
@@ -175,6 +184,18 @@ fn decode_field(data : Bytes, f : Int, limits : ReadLimits, depth : Int) -> (Fie
       4 => Binary
       5 => Utf8
       6 => Boolean
+      15 => {
+        let width = field_int(data, t, 0, 4, 0)
+        if width <= 0 { raise Invalid("fixed binary width must be positive") }
+        FixedSizeBinary(width)
+      }
+      16 => {
+        let size = field_int(data, t, 0, 4, 0)
+        if size <= 0 { raise Invalid("FixedSizeList size must be positive") }
+        FixedSizeList(size)
+      }
+      19 => LargeBinary
+      20 => LargeUtf8
       8 => match field_int(data, t, 0, 2, 1) {
         0 => Date32
         1 => Date64
@@ -189,6 +210,7 @@ fn decode_field(data : Bytes, f : Int, limits : ReadLimits, depth : Int) -> (Fie
       )
       18 => Duration(decode_time_unit(field_int(data, t, 0, 2, 1)))
       12 => List
+      21 => LargeList
       13 => Struct
       _ => raise Unsupported("Arrow type tag " + tag.to_string())
     }
@@ -211,8 +233,12 @@ fn decode_field(data : Bytes, f : Int, limits : ReadLimits, depth : Int) -> (Fie
       }
     }
     let (p, n) = vector_info(data, f, 5, 4, limits.max_fields)
-    if (data_type == List && n != 1) ||
-      (data_type != List && data_type != Struct && n != 0) {
+    let nested_one = data_type == List || data_type == LargeList || (match data_type {
+      FixedSizeList(_) => true
+      _ => false
+    })
+    if (nested_one && n != 1) ||
+      (!nested_one && data_type != Struct && n != 0) {
       raise Invalid("invalid child field count")
     }
     let children = []

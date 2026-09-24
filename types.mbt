@@ -35,10 +35,15 @@ pub(all) enum DataType {
   Timestamp(TimeUnit, String?)
   Duration(TimeUnit)
   List
+  LargeList
+  FixedSizeList(Int)
   Struct
   Dictionary(Int64, DataType, Bool)
   Utf8
   Binary
+  LargeUtf8
+  LargeBinary
+  FixedSizeBinary(Int)
 } derive(Eq, Debug)
 
 ///|
@@ -105,10 +110,15 @@ pub(all) enum Column {
   Timestamps(Array[Int64?], TimeUnit, String?)
   Durations(Array[Int64?], TimeUnit)
   Lists(Array[Int], Array[Bool], Column)
+  LargeLists(Array[Int], Array[Bool], Column)
+  FixedLists(Array[Bool], Column, Int)
   Structs(Array[Bool], Array[Column])
   Dictionaries(Array[Int?], Column, Int64, Bool)
   Strings(Array[String?])
   Binaries(Array[Bytes?])
+  LargeStrings(Array[String?])
+  LargeBinaries(Array[Bytes?])
+  FixedBinaries(Array[Bytes?], Int)
 } derive(Debug)
 
 ///|
@@ -131,10 +141,15 @@ pub fn Column::length(self : Column) -> Int {
     Timestamps(a, _, _) => a.length()
     Durations(a, _) => a.length()
     Lists(offsets, _, _) => offsets.length() - 1
+    LargeLists(offsets, _, _) => offsets.length() - 1
+    FixedLists(validity, _, _) => validity.length()
     Structs(validity, _) => validity.length()
     Dictionaries(indices, _, _, _) => indices.length()
     Strings(a) => a.length()
     Binaries(a) => a.length()
+    LargeStrings(a) => a.length()
+    LargeBinaries(a) => a.length()
+    FixedBinaries(a, _) => a.length()
   }
 }
 
@@ -158,10 +173,15 @@ pub fn Column::data_type(self : Column) -> DataType {
     Timestamps(_, unit, timezone) => Timestamp(unit, timezone)
     Durations(_, unit) => Duration(unit)
     Lists(_, _, _) => List
+    LargeLists(_, _, _) => LargeList
+    FixedLists(_, _, size) => FixedSizeList(size)
     Structs(_, _) => Struct
     Dictionaries(_, values, id, ordered) => Dictionary(id, values.data_type(), ordered)
     Strings(_) => Utf8
     Binaries(_) => Binary
+    LargeStrings(_) => LargeUtf8
+    LargeBinaries(_) => LargeBinary
+    FixedBinaries(_, width) => FixedSizeBinary(width)
   }
 }
 
@@ -185,10 +205,15 @@ fn Column::valid_at(self : Column, i : Int) -> Bool {
     Timestamps(a, _, _) => a[i] is Some(_)
     Durations(a, _) => a[i] is Some(_)
     Lists(_, validity, _) => validity[i]
+    LargeLists(_, validity, _) => validity[i]
+    FixedLists(validity, _, _) => validity[i]
     Structs(validity, _) => validity[i]
     Dictionaries(indices, _, _, _) => indices[i] is Some(_)
     Strings(a) => a[i] is Some(_)
     Binaries(a) => a[i] is Some(_)
+    LargeStrings(a) => a[i] is Some(_)
+    LargeBinaries(a) => a[i] is Some(_)
+    FixedBinaries(a, _) => a[i] is Some(_)
   }
 }
 
@@ -254,6 +279,14 @@ pub fn RecordBatch::validate(self : RecordBatch) -> Unit raise ArrowError {
       UInt8s(a) => for v in a { if v is Some(x) && (x < 0 || x > 255) { raise Invalid("UInt8 value outside range: " + field.name) } }
       UInt16s(a) => for v in a { if v is Some(x) && (x < 0 || x > 65535) { raise Invalid("UInt16 value outside range: " + field.name) } }
       Date64s(a) => for v in a { if v is Some(x) && x % 86400000L != 0L { raise Invalid("Date64 must be whole days: " + field.name) } }
+      FixedBinaries(a, width) => {
+        if width <= 0 { raise Invalid("fixed binary width must be positive") }
+        for v in a {
+          if v is Some(bytes) && bytes.length() != width {
+            raise Invalid("fixed binary value width mismatch: " + field.name)
+          }
+        }
+      }
       _ => ()
     }
   }
@@ -263,7 +296,8 @@ pub fn RecordBatch::validate(self : RecordBatch) -> Unit raise ArrowError {
 fn validate_nested(field : Field, column : Column, depth : Int) -> Unit raise ArrowError {
   if depth > 64 { raise LimitExceeded("nested depth") }
   match (field.data_type, column) {
-    (List, Lists(offsets, validity, child)) => {
+    (List, Lists(offsets, validity, child)) |
+    (LargeList, LargeLists(offsets, validity, child)) => {
       if field.children.length() != 1 || offsets.length() != validity.length() + 1 {
         raise Invalid("invalid List field or offsets")
       }
@@ -280,6 +314,19 @@ fn validate_nested(field : Field, column : Column, depth : Int) -> Unit raise Ar
         raise Invalid("List child type or nullability mismatch")
       }
       validate_nested(field.children[0], child, depth + 1)
+    }
+    (FixedSizeList(size), FixedLists(validity, child, _)) => {
+      if size <= 0 || field.children.length() != 1 ||
+        validity.length() > 0x7fffffff / size ||
+        child.length() != validity.length() * size {
+        raise Invalid("invalid FixedSizeList layout")
+      }
+      let child_field = field.children[0]
+      if child.data_type() != child_field.data_type ||
+        (!child_field.nullable && child.null_count() != 0) {
+        raise Invalid("FixedSizeList child type or nullability mismatch")
+      }
+      validate_nested(child_field, child, depth + 1)
     }
     (Struct, Structs(validity, children)) => {
       if field.children.length() != children.length() {
@@ -305,7 +352,8 @@ fn validate_nested(field : Field, column : Column, depth : Int) -> Unit raise Ar
         }
       }
     }
-    (List, _) | (Struct, _) => raise Invalid("nested column type mismatch")
+    (List, _) | (LargeList, _) | (FixedSizeList(_), _) | (Struct, _) =>
+      raise Invalid("nested column type mismatch")
     (_, _) => if !field.children.is_empty() { raise Invalid("primitive field has children") }
   }
 }

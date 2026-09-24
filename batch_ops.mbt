@@ -54,6 +54,23 @@ fn Column::take_checked(self : Column, indices : Array[Int]) -> Column {
       }
       Lists(selected_offsets, take_values(validity, indices), child.take_checked(child_indices))
     }
+    LargeLists(offsets, validity, child) => {
+      let child_indices = []
+      let selected_offsets = [0]
+      for index in indices {
+        for j in offsets[index]..<offsets[index + 1] { child_indices.push(j) }
+        selected_offsets.push(child_indices.length())
+      }
+      LargeLists(selected_offsets, take_values(validity, indices),
+        child.take_checked(child_indices))
+    }
+    FixedLists(validity, child, size) => {
+      let child_indices = []
+      for index in indices {
+        for j in 0..<size { child_indices.push(index * size + j) }
+      }
+      FixedLists(take_values(validity, indices), child.take_checked(child_indices), size)
+    }
     Structs(validity, children) => Structs(take_values(validity, indices),
       children.map(child => child.take_checked(indices)))
     Dictionaries(indices_array, values, id, ordered) => Dictionaries(
@@ -61,6 +78,9 @@ fn Column::take_checked(self : Column, indices : Array[Int]) -> Column {
       values.take_checked(Array::makei(values.length(), i => i)), id, ordered)
     Strings(a) => Strings(take_values(a, indices))
     Binaries(a) => Binaries(take_values(a, indices))
+    LargeStrings(a) => LargeStrings(take_values(a, indices))
+    LargeBinaries(a) => LargeBinaries(take_values(a, indices))
+    FixedBinaries(a, width) => FixedBinaries(take_values(a, indices), width)
   }
 }
 
@@ -94,6 +114,19 @@ fn Column::append_checked(self : Column, other : Column) -> Column raise ArrowEr
       for i in 1..<rb.length() { offsets.push(base + rb[i]) }
       Lists(offsets, append_values(lv, rv), lc.append_checked(rc))
     }
+    (LargeLists(a, av, ac), LargeLists(b, bv, bc)) => {
+      let left = LargeLists(a, av, ac).take_checked(Array::makei(av.length(), i => i))
+      let right = LargeLists(b, bv, bc).take_checked(Array::makei(bv.length(), i => i))
+      guard left is LargeLists(la, lv, lc) && right is LargeLists(rb, rv, rc) else {
+        raise Invalid("internal LargeList concat")
+      }
+      let offsets = la.map(x => x)
+      let base = la[la.length() - 1]
+      for i in 1..<rb.length() { offsets.push(base + rb[i]) }
+      LargeLists(offsets, append_values(lv, rv), lc.append_checked(rc))
+    }
+    (FixedLists(av, ac, size), FixedLists(bv, bc, _)) =>
+      FixedLists(append_values(av, bv), ac.append_checked(bc), size)
     (Structs(av, ac), Structs(bv, bc)) => {
       let children = []
       for i in 0..<ac.length() { children.push(ac[i].append_checked(bc[i])) }
@@ -113,6 +146,10 @@ fn Column::append_checked(self : Column, other : Column) -> Column raise ArrowEr
     }
     (Strings(a), Strings(b)) => Strings(append_values(a, b))
     (Binaries(a), Binaries(b)) => Binaries(append_values(a, b))
+    (LargeStrings(a), LargeStrings(b)) => LargeStrings(append_values(a, b))
+    (LargeBinaries(a), LargeBinaries(b)) => LargeBinaries(append_values(a, b))
+    (FixedBinaries(a, width), FixedBinaries(b, _)) =>
+      FixedBinaries(append_values(a, b), width)
     _ => raise Invalid("column type mismatch in concat")
   }
 }

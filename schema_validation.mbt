@@ -6,8 +6,13 @@ fn validate_field_schema(
 ) -> Unit raise ArrowError {
   if depth > 64 { raise LimitExceeded("schema nesting depth") }
   match field.data_type {
-    List => {
+    List | LargeList => {
       if field.children.length() != 1 { raise Invalid("List must have one child field") }
+    }
+    FixedSizeList(size) => {
+      if size <= 0 || field.children.length() != 1 {
+        raise Invalid("FixedSizeList requires positive size and one child")
+      }
     }
     Struct => ()
     Dictionary(id, inner, ordered) => {
@@ -26,6 +31,9 @@ fn validate_field_schema(
         }
       }
       seen.push((id, inner, ordered))
+    }
+    FixedSizeBinary(width) => if width <= 0 || !field.children.is_empty() {
+      raise Invalid("invalid fixed-size binary field")
     }
     _ => if !field.children.is_empty() {
       raise Invalid("primitive field has children")

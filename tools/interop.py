@@ -50,7 +50,9 @@ def normalize(schema, batches):
                         value = str(struct.unpack("<i", struct.pack("<f", value))[0])
                     elif pa.types.is_float64(field.type):
                         value = str(struct.unpack("<q", struct.pack("<d", value))[0])
-                    elif pa.types.is_binary(field.type) or (
+                    elif (pa.types.is_binary(field.type) or
+                          pa.types.is_large_binary(field.type) or
+                          pa.types.is_fixed_size_binary(field.type)) or (
                         pa.types.is_dictionary(field.type) and
                         pa.types.is_binary(field.type.value_type)
                     ):
@@ -173,6 +175,29 @@ def dictionary_replacement_case():
     return schema, result
 
 
+def binary_variants_case():
+    types = [pa.large_string(), pa.large_binary(), pa.binary(4)]
+    values = [["", "月兔", None], [b"", b"\xff\x00", None],
+              [b"abcd", None, b"\x00\x01\x02\x03"]]
+    schema = pa.schema([pa.field(f"binary_{i}", typ) for i, typ in enumerate(types)])
+    arrays = [pa.array(v, type=t) for v, t in zip(values, types)]
+    return schema, [pa.RecordBatch.from_arrays(arrays, schema=schema)]
+
+
+def fixed_list_case():
+    typ = pa.list_(pa.field("item", pa.int16()), 3)
+    schema = pa.schema([pa.field("triples", typ)])
+    array = pa.array([[1, 2, 3], None, [None, -1, 32767]], type=typ)
+    return schema, [pa.RecordBatch.from_arrays([array], schema=schema)]
+
+
+def large_list_case():
+    typ = pa.large_list(pa.field("item", pa.string()))
+    schema = pa.schema([pa.field("words", typ)])
+    array = pa.array([["moon", None], None, [], ["月兔"]], type=typ)
+    return schema, [pa.RecordBatch.from_arrays([array], schema=schema)]
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--skip-build", action="store_true")
@@ -241,6 +266,18 @@ def main():
     schema, batches = dictionary_case()
     for kind in ["stream", "file"]:
         verify(schema, batches, write_arrow(schema, batches, kind), kind, "dictionary")
+
+    schema, batches = binary_variants_case()
+    for kind in ["stream", "file"]:
+        verify(schema, batches, write_arrow(schema, batches, kind), kind, "binary-variants")
+
+    schema, batches = fixed_list_case()
+    for kind in ["stream", "file"]:
+        verify(schema, batches, write_arrow(schema, batches, kind), kind, "fixed-list")
+
+    schema, batches = large_list_case()
+    for kind in ["stream", "file"]:
+        verify(schema, batches, write_arrow(schema, batches, kind), kind, "large-list")
 
     schema, batches = dictionary_replacement_case()
     raw = write_arrow(schema, batches, "stream")

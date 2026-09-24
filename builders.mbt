@@ -18,11 +18,18 @@ pub(all) enum Value {
   DurationValue(Int64)
   Utf8Value(String)
   BinaryValue(Bytes)
+  LargeUtf8Value(String)
+  LargeBinaryValue(Bytes)
+  FixedBinaryValue(Bytes)
+  ListValue(Array[Value?])
+  LargeListValue(Array[Value?])
+  FixedListValue(Array[Value?])
+  StructValue(Array[Value?])
 } derive(Debug)
 
 ///|
-fn empty_column(data_type : DataType) -> Column raise ArrowError {
-  match data_type {
+fn empty_column(field : Field) -> Column raise ArrowError {
+  match field.data_type {
     Null => Nulls(0)
     Boolean => Booleans([])
     Int8 => Int8s([])
@@ -39,15 +46,30 @@ fn empty_column(data_type : DataType) -> Column raise ArrowError {
     Date64 => Date64s([])
     Timestamp(unit, timezone) => Timestamps([], unit, timezone)
     Duration(unit) => Durations([], unit)
-    List | Struct | Dictionary(_, _, _) => raise Unsupported("row builder for nested or dictionary fields")
+    List => Lists([0], [], empty_column(field.children[0]))
+    LargeList => LargeLists([0], [], empty_column(field.children[0]))
+    FixedSizeList(size) => FixedLists([], empty_column(field.children[0]), size)
+    Struct => Structs([], field.children.map(child => empty_column(child)))
+    Dictionary(_, _, _) => raise Unsupported("row builder for dictionary fields")
     Utf8 => Strings([])
     Binary => Binaries([])
+    LargeUtf8 => LargeStrings([])
+    LargeBinary => LargeBinaries([])
+    FixedSizeBinary(width) => FixedBinaries([], width)
   }
 }
 
 ///|
-fn value_matches(data_type : DataType, value : Value) -> Bool {
-  match (data_type, value) {
+fn cell_matches(field : Field, value : Value?) -> Bool {
+  match value {
+    None => field.nullable
+    Some(value) => value_matches(field, value)
+  }
+}
+
+///|
+fn value_matches(field : Field, value : Value) -> Bool {
+  match (field.data_type, value) {
     (Boolean, BooleanValue(_)) => true
     (Int8, Int8Value(v)) => v >= -128 && v <= 127
     (Int16, Int16Value(v)) => v >= -32768 && v <= 32767
@@ -65,12 +87,77 @@ fn value_matches(data_type : DataType, value : Value) -> Bool {
     (Duration(_), DurationValue(_)) => true
     (Utf8, Utf8Value(_)) => true
     (Binary, BinaryValue(_)) => true
+    (LargeUtf8, LargeUtf8Value(_)) => true
+    (LargeBinary, LargeBinaryValue(_)) => true
+    (FixedSizeBinary(width), FixedBinaryValue(value)) => value.length() == width
+    (List, ListValue(values)) => {
+      if field.children.length() != 1 { return false }
+      for value in values {
+        if !cell_matches(field.children[0], value) { return false }
+      }
+      true
+    }
+    (LargeList, LargeListValue(values)) => {
+      if field.children.length() != 1 { return false }
+      for value in values {
+        if !cell_matches(field.children[0], value) { return false }
+      }
+      true
+    }
+    (FixedSizeList(size), FixedListValue(values)) => {
+      if field.children.length() != 1 || values.length() != size { return false }
+      for value in values {
+        if !cell_matches(field.children[0], value) { return false }
+      }
+      true
+    }
+    (Struct, StructValue(values)) => {
+      if values.length() != field.children.length() { return false }
+      for i in 0..<values.length() {
+        if !cell_matches(field.children[i], values[i]) { return false }
+      }
+      true
+    }
     _ => false
   }
 }
 
 ///|
-fn Column::push_value(self : Column, value : Value?) -> Column {
+fn default_cell(field : Field) -> Value? {
+  match field.data_type {
+    Null => None
+    Boolean => Some(BooleanValue(false))
+    Int8 => Some(Int8Value(0))
+    Int16 => Some(Int16Value(0))
+    Int32 => Some(Int32Value(0))
+    Int64 => Some(Int64Value(0L))
+    UInt8 => Some(UInt8Value(0))
+    UInt16 => Some(UInt16Value(0))
+    UInt32 => Some(UInt32Value(0U))
+    UInt64 => Some(UInt64Value(0UL))
+    Float32 => Some(Float32Value(0.0F))
+    Float64 => Some(Float64Value(0.0))
+    Date32 => Some(Date32Value(0))
+    Date64 => Some(Date64Value(0L))
+    Timestamp(_, _) => Some(TimestampValue(0L))
+    Duration(_) => Some(DurationValue(0L))
+    Utf8 => Some(Utf8Value(""))
+    Binary => Some(BinaryValue(b""))
+    LargeUtf8 => Some(LargeUtf8Value(""))
+    LargeBinary => Some(LargeBinaryValue(b""))
+    FixedSizeBinary(width) => Some(FixedBinaryValue(Bytes::from_array(
+      Array::make(width, b'\x00'))))
+    List => Some(ListValue([]))
+    LargeList => Some(LargeListValue([]))
+    FixedSizeList(size) => Some(FixedListValue(Array::makei(size, _ =>
+      default_cell(field.children[0]))))
+    Struct => Some(StructValue(field.children.map(child => default_cell(child))))
+    Dictionary(_, _, _) => None
+  }
+}
+
+///|
+fn Column::push_value(self : Column, field : Field, value : Value?) -> Column {
   match (self, value) {
     (Nulls(n), _) => Nulls(n + 1)
     (Booleans(a), Some(BooleanValue(v))) => { a.push(Some(v)); self }
@@ -107,6 +194,65 @@ fn Column::push_value(self : Column, value : Value?) -> Column {
     (Strings(a), None) => { a.push(None); self }
     (Binaries(a), Some(BinaryValue(v))) => { a.push(Some(v)); self }
     (Binaries(a), None) => { a.push(None); self }
+    (LargeStrings(a), Some(LargeUtf8Value(v))) => { a.push(Some(v)); self }
+    (LargeStrings(a), None) => { a.push(None); self }
+    (LargeBinaries(a), Some(LargeBinaryValue(v))) => { a.push(Some(v)); self }
+    (LargeBinaries(a), None) => { a.push(None); self }
+    (FixedBinaries(a, _), Some(FixedBinaryValue(v))) => { a.push(Some(v)); self }
+    (FixedBinaries(a, _), None) => { a.push(None); self }
+    (Lists(offsets, validity, child), Some(ListValue(items))) => {
+      let mut updated = child
+      for item in items { updated = updated.push_value(field.children[0], item) }
+      validity.push(true)
+      offsets.push(updated.length())
+      Lists(offsets, validity, updated)
+    }
+    (Lists(offsets, validity, _), None) => {
+      validity.push(false)
+      offsets.push(offsets[offsets.length() - 1])
+      self
+    }
+    (LargeLists(offsets, validity, child), Some(LargeListValue(items))) => {
+      let mut updated = child
+      for item in items { updated = updated.push_value(field.children[0], item) }
+      validity.push(true)
+      offsets.push(updated.length())
+      LargeLists(offsets, validity, updated)
+    }
+    (LargeLists(offsets, validity, _), None) => {
+      validity.push(false)
+      offsets.push(offsets[offsets.length() - 1])
+      self
+    }
+    (FixedLists(validity, child, size), Some(FixedListValue(items))) => {
+      let mut updated = child
+      for item in items { updated = updated.push_value(field.children[0], item) }
+      validity.push(true)
+      FixedLists(validity, updated, size)
+    }
+    (FixedLists(validity, child, size), None) => {
+      let mut updated = child
+      for _ in 0..<size {
+        updated = updated.push_value(field.children[0], default_cell(field.children[0]))
+      }
+      validity.push(false)
+      FixedLists(validity, updated, size)
+    }
+    (Structs(validity, children), Some(StructValue(items))) => {
+      for i in 0..<children.length() {
+        children[i] = children[i].push_value(field.children[i], items[i])
+      }
+      validity.push(true)
+      self
+    }
+    (Structs(validity, children), None) => {
+      for i in 0..<children.length() {
+        children[i] = children[i].push_value(field.children[i],
+          default_cell(field.children[i]))
+      }
+      validity.push(false)
+      self
+    }
     _ => self // append_row verifies the entire row before mutation
   }
 }
@@ -121,8 +267,9 @@ pub struct BatchBuilder {
 
 ///|
 pub fn BatchBuilder::new(schema : Schema) -> BatchBuilder raise ArrowError {
+  validate_schema(schema)
   let owned = copy_schema(schema)
-  { schema: owned, columns: owned.fields.map(f => empty_column(f.data_type)), rows: 0, }
+  { schema: owned, columns: owned.fields.map(f => empty_column(f)), rows: 0, }
 }
 
 ///|
@@ -141,13 +288,13 @@ pub fn BatchBuilder::append_row(self : BatchBuilder, values : Array[Value?]) -> 
       None => if !field.nullable {
         raise Invalid("null in non-nullable field: " + field.name)
       }
-      Some(value) => if !value_matches(field.data_type, value) {
+      Some(value) => if !value_matches(field, value) {
         raise Invalid("builder value type or range mismatch: " + field.name)
       }
     }
   }
   for i in 0..<self.columns.length() {
-    self.columns[i] = self.columns[i].push_value(values[i])
+    self.columns[i] = self.columns[i].push_value(self.schema.fields[i], values[i])
   }
   self.rows += 1
 }
