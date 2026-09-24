@@ -80,10 +80,14 @@ fn field_type_string(field : @arrow.Field) -> String {
     Float64 => "double"
     Date32 => "date32[day]"
     Date64 => "date64[ms]"
-    Timestamp(unit, timezone) => "timestamp[" + time_unit_string(unit) + (match timezone {
-      Some(s) => ", tz=" + s
-      None => ""
-    }) + "]"
+    Timestamp(unit, timezone) =>
+      "timestamp[" +
+      time_unit_string(unit) +
+      (match timezone {
+        Some(s) => ", tz=" + s
+        None => ""
+      }) +
+      "]"
     Duration(unit) => "duration[" + time_unit_string(unit) + "]"
     Utf8 => "string"
     Binary => "binary"
@@ -92,13 +96,29 @@ fn field_type_string(field : @arrow.Field) -> String {
     FixedSizeBinary(width) => "fixed_size_binary[" + width.to_string() + "]"
     Dictionary(_, value_type, ordered) => {
       let inner = if value_type == Utf8 { "string" } else { "binary" }
-      "dictionary<values=" + inner + ", indices=int32, ordered=" +
-      (if ordered { "1" } else { "0" }) + ">"
+      "dictionary<values=" +
+      inner +
+      ", indices=int32, ordered=" +
+      (if ordered { "1" } else { "0" }) +
+      ">"
     }
     List => "list<" + child_type_string(field.children[0]) + ">"
     LargeList => "large_list<" + child_type_string(field.children[0]) + ">"
-    FixedSizeList(size) => "fixed_size_list<" + child_type_string(field.children[0]) +
-      ">[" + size.to_string() + "]"
+    FixedSizeList(size) =>
+      "fixed_size_list<" +
+      child_type_string(field.children[0]) +
+      ">[" +
+      size.to_string() +
+      "]"
+    Map(sorted) => {
+      let entries = field.children[0].children
+      "map<" +
+      field_type_string(entries[0]) +
+      ", " +
+      field_type_string(entries[1]) +
+      (if sorted { ", keys_sorted" } else { "" }) +
+      ">"
+    }
     Struct => {
       let parts = field.children.map(child => child_type_string(child))
       "struct<" + parts.join(", ") + ">"
@@ -108,7 +128,9 @@ fn field_type_string(field : @arrow.Field) -> String {
 
 ///|
 fn child_type_string(field : @arrow.Field) -> String {
-  field.name + ": " + field_type_string(field) +
+  field.name +
+  ": " +
+  field_type_string(field) +
   (if field.nullable { "" } else { " not null" })
 }
 
@@ -130,12 +152,12 @@ fn schema_json(schema : @arrow.Schema) -> Json {
 fn cell_json(column : @arrow.Column, field : @arrow.Field, i : Int) -> Json {
   match column {
     Nulls(_) => Json::null()
-    Booleans(a) => match a[i] {
-      Some(x) => x.to_json()
-      None => Json::null()
-    }
-    Int8s(a) | Int16s(a) | Int32s(a) |
-    UInt8s(a) | UInt16s(a) | Date32s(a) =>
+    Booleans(a) =>
+      match a[i] {
+        Some(x) => x.to_json()
+        None => Json::null()
+      }
+    Int8s(a) | Int16s(a) | Int32s(a) | UInt8s(a) | UInt16s(a) | Date32s(a) =>
       match a[i] {
         Some(x) => x.to_json()
         None => Json::null()
@@ -145,40 +167,50 @@ fn cell_json(column : @arrow.Column, field : @arrow.Field, i : Int) -> Json {
         Some(x) => Json::string(x.to_string())
         None => Json::null()
       }
-    UInt32s(a) => match a[i] {
-      Some(x) => x.to_json()
-      None => Json::null()
-    }
-    UInt64s(a) => match a[i] {
-      Some(x) => Json::string(x.to_string())
-      None => Json::null()
-    }
-    Float32s(a) => match a[i] {
-      Some(x) => Json::string(x.reinterpret_as_int().to_string())
-      None => Json::null()
-    }
-    Float64s(a) => match a[i] {
-      Some(x) => Json::string(x.reinterpret_as_int64().to_string())
-      None => Json::null()
-    }
-    Strings(a) => match a[i] {
-      Some(x) => x.to_json()
-      None => Json::null()
-    }
-    Binaries(a) => match a[i] {
-      Some(x) => Json::string(hex(x))
-      None => Json::null()
-    }
-    LargeStrings(a) => match a[i] {
-      Some(x) => x.to_json()
-      None => Json::null()
-    }
-    LargeBinaries(a) | FixedBinaries(a, _) => match a[i] {
-      Some(x) => Json::string(hex(x))
-      None => Json::null()
-    }
+    UInt32s(a) =>
+      match a[i] {
+        Some(x) => x.to_json()
+        None => Json::null()
+      }
+    UInt64s(a) =>
+      match a[i] {
+        Some(x) => Json::string(x.to_string())
+        None => Json::null()
+      }
+    Float32s(a) =>
+      match a[i] {
+        Some(x) => Json::string(x.reinterpret_as_int().to_string())
+        None => Json::null()
+      }
+    Float64s(a) =>
+      match a[i] {
+        Some(x) => Json::string(x.reinterpret_as_int64().to_string())
+        None => Json::null()
+      }
+    Strings(a) =>
+      match a[i] {
+        Some(x) => x.to_json()
+        None => Json::null()
+      }
+    Binaries(a) =>
+      match a[i] {
+        Some(x) => Json::string(hex(x))
+        None => Json::null()
+      }
+    LargeStrings(a) =>
+      match a[i] {
+        Some(x) => x.to_json()
+        None => Json::null()
+      }
+    LargeBinaries(a) | FixedBinaries(a, _) =>
+      match a[i] {
+        Some(x) => Json::string(hex(x))
+        None => Json::null()
+      }
     Lists(offsets, validity, child) => {
-      if !validity[i] { return Json::null() }
+      if !validity[i] {
+        return Json::null()
+      }
       let items = []
       for j in offsets[i]..<offsets[i + 1] {
         items.push(cell_json(child, field.children[0], j))
@@ -186,15 +218,35 @@ fn cell_json(column : @arrow.Column, field : @arrow.Field, i : Int) -> Json {
       Json::array(items)
     }
     LargeLists(offsets, validity, child) => {
-      if !validity[i] { return Json::null() }
+      if !validity[i] {
+        return Json::null()
+      }
       let items = []
       for j in offsets[i]..<offsets[i + 1] {
         items.push(cell_json(child, field.children[0], j))
       }
       Json::array(items)
     }
+    Maps(offsets, validity, child, _) => {
+      if !validity[i] {
+        return Json::null()
+      }
+      guard child is Structs(_, fields) else { return Json::null() }
+      let pairs = []
+      for j in offsets[i]..<offsets[i + 1] {
+        pairs.push(
+          Json::array([
+            cell_json(fields[0], field.children[0].children[0], j),
+            cell_json(fields[1], field.children[0].children[1], j),
+          ]),
+        )
+      }
+      Json::array(pairs)
+    }
     FixedLists(validity, child, size) => {
-      if !validity[i] { return Json::null() }
+      if !validity[i] {
+        return Json::null()
+      }
       let items = []
       for j in 0..<size {
         items.push(cell_json(child, field.children[0], i * size + j))
@@ -202,17 +254,29 @@ fn cell_json(column : @arrow.Column, field : @arrow.Field, i : Int) -> Json {
       Json::array(items)
     }
     Structs(validity, children) => {
-      if !validity[i] { return Json::null() }
+      if !validity[i] {
+        return Json::null()
+      }
       let members : Map[String, Json] = Map([])
       for j in 0..<children.length() {
-        members[field.children[j].name] = cell_json(children[j], field.children[j], i)
+        members[field.children[j].name] = cell_json(
+          children[j],
+          field.children[j],
+          i,
+        )
       }
       Json::object(members)
     }
-    Dictionaries(indices, values, _, _) => match indices[i] {
-      None => Json::null()
-      Some(index) => cell_json(values, @arrow.Field::new("value", values.data_type()), index)
-    }
+    Dictionaries(indices, values, _, _) =>
+      match indices[i] {
+        None => Json::null()
+        Some(index) =>
+          cell_json(
+            values,
+            @arrow.Field::new("value", values.data_type()),
+            index,
+          )
+      }
   }
 }
 
@@ -226,8 +290,9 @@ fn data_json(data : @arrow.IpcData) -> Json {
   let batches = data.batches.map(batch => {
     Json::object({
       "rows": batch.num_rows.to_json(),
-      "columns": Array::makei(batch.columns.length(), i =>
-        column_json(batch.columns[i], data.schema.fields[i])).to_json(),
+      "columns": Array::makei(batch.columns.length(), i => {
+        column_json(batch.columns[i], data.schema.fields[i])
+      }).to_json(),
     })
   })
   { "schema": schema_json(data.schema), "batches": batches.to_json() }
@@ -286,6 +351,24 @@ fn sample() -> @arrow.IpcData raise {
 }
 
 ///|
+/// Process file batches through public indexed reads, then materialize the
+/// small demo result. The CLI's hex argv transport still limits input size.
+fn filtered_file(raw : String, project : Bool) -> @arrow.IpcData raise {
+  let reader = @arrow.FileReader::new(unhex(raw))
+  let batches = []
+  for i in 0..<reader.num_batches() {
+    let filtered = reader.get_batch(i).filter_where(IsNotNull(0))
+    batches.push(if project { filtered.project([0, 1]) } else { filtered })
+  }
+  let schema = if project {
+    reader.schema.project([0, 1])
+  } else {
+    reader.schema
+  }
+  @arrow.Table::new(schema, batches).to_ipc_data()
+}
+
+///|
 /// Hex transport keeps this test executable portable and free of filesystem FFI.
 fn main {
   let args = @env.args()
@@ -296,16 +379,21 @@ fn main {
       [_, "stream", raw] | [_, _, "stream", raw] =>
         @arrow.read_stream(unhex(raw))
       [_, "file", raw] | [_, _, "file", raw] => @arrow.read_file(unhex(raw))
-      _ => fail("usage: interop sample | stream HEX | file HEX")
+      [_, "filter-file", raw] | [_, _, "filter-file", raw] =>
+        filtered_file(raw, false)
+      [_, "filter-project-file", raw] | [_, _, "filter-project-file", raw] =>
+        filtered_file(raw, true)
+      _ =>
+        fail(
+          "usage: interop sample | stream HEX | file HEX | filter-file HEX | filter-project-file HEX",
+        )
     }
     Json::object({
       "data": data_json(data),
       "stream": hex(@arrow.write_stream(data.schema, data.batches)).to_json(),
-      "file": (try {
-        hex(@arrow.write_file(data.schema, data.batches)).to_json()
-      } catch {
+      "file": hex(@arrow.write_file(data.schema, data.batches)).to_json() catch {
         _ => Json::null()
-      }),
+      },
     })
   } catch {
     error => Json::object({ "error": error.to_string().to_json() })

@@ -1,0 +1,37 @@
+{
+  "target": "js",
+  "platform": "Windows-11-10.0.26200-SP0",
+  "machine": "AMD64",
+  "processor": "Intel64 Family 6 Model 186 Stepping 2, GenuineIntel",
+  "python": "3.13.9",
+  "moon": "moon 0.1.20260827 (d0aaa07 2026-08-27)\n\nFeature flags enabled: rr_moon_mod,rr_moon_pkg",
+  "command": [
+    "node",
+    "D:\\moon-build\\_build\\js\\debug\\build\\shunge\\arrow\\cmd\\bench\\bench.js"
+  ],
+  "wall_seconds": 2.435,
+  "sampled_peak_rss_bytes": 556507136,
+  "rss_poll_interval_ms": 5,
+  "cases": [
+    {
+      "rows": 1000,
+      "iterations": 50,
+      "ipc_bytes": 25536,
+      "encode_ms": 75,
+      "decode_ms": 30,
+      "decoded_rows": 50000,
+      "encode_rows_per_s": 666667,
+      "decode_rows_per_s": 1666667
+    },
+    {
+      "rows": 100000,
+      "iterations": 8,
+      "ipc_bytes": 2474112,
+      "encode_ms": 1338,
+      "decode_ms": 450,
+      "decoded_rows": 800000,
+      "encode_rows_per_s": 597907,
+      "decode_rows_per_s": 1777778
+    }
+  ]
+}

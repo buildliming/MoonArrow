@@ -16,7 +16,7 @@ pub(all) enum TimeUnit {
 } derive(Eq, Debug)
 
 ///|
-/// Types supported by the initial IPC implementation.
+/// Data types supported by the current Arrow IPC subset.
 pub(all) enum DataType {
   Null
   Boolean
@@ -37,6 +37,7 @@ pub(all) enum DataType {
   List
   LargeList
   FixedSizeList(Int)
+  Map(Bool)
   Struct
   Dictionary(Int64, DataType, Bool)
   Utf8
@@ -90,6 +91,11 @@ pub fn Schema::new(
 }
 
 ///|
+pub fn Schema::num_fields(self : Schema) -> Int {
+  self.fields.length()
+}
+
+///|
 /// Owned, decoded column values. None represents an Arrow null slot.
 /// Binary data is never interpreted as text; Int64 values retain all 64 bits.
 pub(all) enum Column {
@@ -112,6 +118,7 @@ pub(all) enum Column {
   Lists(Array[Int], Array[Bool], Column)
   LargeLists(Array[Int], Array[Bool], Column)
   FixedLists(Array[Bool], Column, Int)
+  Maps(Array[Int], Array[Bool], Column, Bool)
   Structs(Array[Bool], Array[Column])
   Dictionaries(Array[Int?], Column, Int64, Bool)
   Strings(Array[String?])
@@ -143,6 +150,7 @@ pub fn Column::length(self : Column) -> Int {
     Lists(offsets, _, _) => offsets.length() - 1
     LargeLists(offsets, _, _) => offsets.length() - 1
     FixedLists(validity, _, _) => validity.length()
+    Maps(offsets, _, _, _) => offsets.length() - 1
     Structs(validity, _) => validity.length()
     Dictionaries(indices, _, _, _) => indices.length()
     Strings(a) => a.length()
@@ -175,8 +183,10 @@ pub fn Column::data_type(self : Column) -> DataType {
     Lists(_, _, _) => List
     LargeLists(_, _, _) => LargeList
     FixedLists(_, _, size) => FixedSizeList(size)
+    Maps(_, _, _, sorted) => Map(sorted)
     Structs(_, _) => Struct
-    Dictionaries(_, values, id, ordered) => Dictionary(id, values.data_type(), ordered)
+    Dictionaries(_, values, id, ordered) =>
+      Dictionary(id, values.data_type(), ordered)
     Strings(_) => Utf8
     Binaries(_) => Binary
     LargeStrings(_) => LargeUtf8
@@ -207,6 +217,7 @@ fn Column::valid_at(self : Column, i : Int) -> Bool {
     Lists(_, validity, _) => validity[i]
     LargeLists(_, validity, _) => validity[i]
     FixedLists(validity, _, _) => validity[i]
+    Maps(_, validity, _, _) => validity[i]
     Structs(validity, _) => validity[i]
     Dictionaries(indices, _, _, _) => indices[i] is Some(_)
     Strings(a) => a[i] is Some(_)
@@ -274,13 +285,40 @@ pub fn RecordBatch::validate(self : RecordBatch) -> Unit raise ArrowError {
     }
     validate_nested(field, column, 0)
     match column {
-      Int8s(a) => for v in a { if v is Some(x) && (x < -128 || x > 127) { raise Invalid("Int8 value outside range: " + field.name) } }
-      Int16s(a) => for v in a { if v is Some(x) && (x < -32768 || x > 32767) { raise Invalid("Int16 value outside range: " + field.name) } }
-      UInt8s(a) => for v in a { if v is Some(x) && (x < 0 || x > 255) { raise Invalid("UInt8 value outside range: " + field.name) } }
-      UInt16s(a) => for v in a { if v is Some(x) && (x < 0 || x > 65535) { raise Invalid("UInt16 value outside range: " + field.name) } }
-      Date64s(a) => for v in a { if v is Some(x) && x % 86400000L != 0L { raise Invalid("Date64 must be whole days: " + field.name) } }
+      Int8s(a) =>
+        for v in a {
+          if v is Some(x) && (x < -128 || x > 127) {
+            raise Invalid("Int8 value outside range: " + field.name)
+          }
+        }
+      Int16s(a) =>
+        for v in a {
+          if v is Some(x) && (x < -32768 || x > 32767) {
+            raise Invalid("Int16 value outside range: " + field.name)
+          }
+        }
+      UInt8s(a) =>
+        for v in a {
+          if v is Some(x) && (x < 0 || x > 255) {
+            raise Invalid("UInt8 value outside range: " + field.name)
+          }
+        }
+      UInt16s(a) =>
+        for v in a {
+          if v is Some(x) && (x < 0 || x > 65535) {
+            raise Invalid("UInt16 value outside range: " + field.name)
+          }
+        }
+      Date64s(a) =>
+        for v in a {
+          if v is Some(x) && x % 86400000L != 0L {
+            raise Invalid("Date64 must be whole days: " + field.name)
+          }
+        }
       FixedBinaries(a, width) => {
-        if width <= 0 { raise Invalid("fixed binary width must be positive") }
+        if width <= 0 {
+          raise Invalid("fixed binary width must be positive")
+        }
         for v in a {
           if v is Some(bytes) && bytes.length() != width {
             raise Invalid("fixed binary value width mismatch: " + field.name)
@@ -293,12 +331,25 @@ pub fn RecordBatch::validate(self : RecordBatch) -> Unit raise ArrowError {
 }
 
 ///|
-fn validate_nested(field : Field, column : Column, depth : Int) -> Unit raise ArrowError {
-  if depth > 64 { raise LimitExceeded("nested depth") }
+pub fn RecordBatch::is_empty(self : RecordBatch) -> Bool {
+  self.num_rows == 0
+}
+
+///|
+fn validate_nested(
+  field : Field,
+  column : Column,
+  depth : Int,
+) -> Unit raise ArrowError {
+  if depth > 64 {
+    raise LimitExceeded("nested depth")
+  }
   match (field.data_type, column) {
-    (List, Lists(offsets, validity, child)) |
-    (LargeList, LargeLists(offsets, validity, child)) => {
-      if field.children.length() != 1 || offsets.length() != validity.length() + 1 {
+    (List, Lists(offsets, validity, child))
+    | (LargeList, LargeLists(offsets, validity, child))
+    | (Map(_), Maps(offsets, validity, child, _)) => {
+      if field.children.length() != 1 ||
+        offsets.length() != validity.length() + 1 {
         raise Invalid("invalid List field or offsets")
       }
       if offsets.is_empty() || offsets[0] < 0 || offsets[0] > child.length() {
@@ -313,10 +364,22 @@ fn validate_nested(field : Field, column : Column, depth : Int) -> Unit raise Ar
         (!field.children[0].nullable && child.null_count() != 0) {
         raise Invalid("List child type or nullability mismatch")
       }
+      if field.data_type is Map(_) {
+        if field.children[0].data_type != Struct ||
+          field.children[0].nullable ||
+          field.children[0].children.length() != 2 ||
+          field.children[0].children[0].nullable ||
+          !(child is Structs(_, _)) {
+          raise Invalid(
+            "Map entries must be a nonnullable Struct with nonnullable keys",
+          )
+        }
+      }
       validate_nested(field.children[0], child, depth + 1)
     }
     (FixedSizeList(size), FixedLists(validity, child, _)) => {
-      if size <= 0 || field.children.length() != 1 ||
+      if size <= 0 ||
+        field.children.length() != 1 ||
         validity.length() > 0x7fffffff / size ||
         child.length() != validity.length() * size {
         raise Invalid("invalid FixedSizeList layout")
@@ -335,7 +398,8 @@ fn validate_nested(field : Field, column : Column, depth : Int) -> Unit raise Ar
       for i in 0..<children.length() {
         let child = children[i]
         let child_field = field.children[i]
-        if child.length() != validity.length() || child.data_type() != child_field.data_type ||
+        if child.length() != validity.length() ||
+          child.data_type() != child_field.data_type ||
           (!child_field.nullable && child.null_count() != 0) {
           raise Invalid("Struct child length, type or nullability mismatch")
         }
@@ -343,7 +407,8 @@ fn validate_nested(field : Field, column : Column, depth : Int) -> Unit raise Ar
       }
     }
     (Dictionary(_, value_type, _), Dictionaries(indices, values, _, _)) => {
-      if (value_type != Utf8 && value_type != Binary) || values.data_type() != value_type {
+      if (value_type != Utf8 && value_type != Binary) ||
+        values.data_type() != value_type {
         raise Unsupported("dictionary values must be Utf8 or Binary")
       }
       for index in indices {
@@ -352,9 +417,15 @@ fn validate_nested(field : Field, column : Column, depth : Int) -> Unit raise Ar
         }
       }
     }
-    (List, _) | (LargeList, _) | (FixedSizeList(_), _) | (Struct, _) =>
-      raise Invalid("nested column type mismatch")
-    (_, _) => if !field.children.is_empty() { raise Invalid("primitive field has children") }
+    (List, _)
+    | (LargeList, _)
+    | (FixedSizeList(_), _)
+    | (Map(_), _)
+    | (Struct, _) => raise Invalid("nested column type mismatch")
+    (_, _) =>
+      if !field.children.is_empty() {
+        raise Invalid("primitive field has children")
+      }
   }
 }
 
@@ -394,8 +465,10 @@ fn ReadLimits::validate(self : ReadLimits) -> Unit raise ArrowError {
     self.max_fields < 0 ||
     self.max_batches < 0 ||
     self.max_metadata_bytes < 0 ||
-    self.max_body_bytes < 0 || self.max_depth < 0 ||
-    self.max_dictionary_values < 0 || self.max_dictionary_messages < 0 {
+    self.max_body_bytes < 0 ||
+    self.max_depth < 0 ||
+    self.max_dictionary_values < 0 ||
+    self.max_dictionary_messages < 0 {
     raise Invalid("reader limits must be nonnegative")
   }
 }

@@ -15,7 +15,8 @@ pub(all) enum Predicate {
 ///|
 fn predicate_value_supported(data_type : DataType) -> Bool {
   match data_type {
-    List | LargeList | FixedSizeList(_) | Struct | Dictionary(_, _, _) | Null => false
+    List | LargeList | FixedSizeList(_) | Struct | Dictionary(_, _, _) | Null =>
+      false
     _ => true
   }
 }
@@ -28,14 +29,15 @@ fn Predicate::check(self : Predicate, schema : Schema) -> Unit raise ArrowError 
         raise Invalid("predicate column index out of range")
       }
       let field = schema.fields[index]
-      if !predicate_value_supported(field.data_type) || !value_matches(field, value) {
+      if !predicate_value_supported(field.data_type) ||
+        !value_matches(field, value) {
         raise Unsupported("predicate value incompatible with column")
       }
     }
-    IsNull(index) | IsNotNull(index) => if index < 0 ||
-      index >= schema.fields.length() {
-      raise Invalid("predicate column index out of range")
-    }
+    IsNull(index) | IsNotNull(index) =>
+      if index < 0 || index >= schema.fields.length() {
+        raise Invalid("predicate column index out of range")
+      }
     And(a, b) | Or(a, b) => {
       a.check(schema)
       b.check(schema)
@@ -56,14 +58,16 @@ fn Column::equals_value(self : Column, row : Int, value : Value) -> Bool {
     (UInt16s(a), UInt16Value(x)) => a[row] == Some(x)
     (UInt32s(a), UInt32Value(x)) => a[row] == Some(x)
     (UInt64s(a), UInt64Value(x)) => a[row] == Some(x)
-    (Float32s(a), Float32Value(x)) => match a[row] {
-      Some(v) => v.reinterpret_as_int() == x.reinterpret_as_int()
-      None => false
-    }
-    (Float64s(a), Float64Value(x)) => match a[row] {
-      Some(v) => v.reinterpret_as_int64() == x.reinterpret_as_int64()
-      None => false
-    }
+    (Float32s(a), Float32Value(x)) =>
+      match a[row] {
+        Some(v) => v.reinterpret_as_int() == x.reinterpret_as_int()
+        None => false
+      }
+    (Float64s(a), Float64Value(x)) =>
+      match a[row] {
+        Some(v) => v.reinterpret_as_int64() == x.reinterpret_as_int64()
+        None => false
+      }
     (Date32s(a), Date32Value(x)) => a[row] == Some(x)
     (Date64s(a), Date64Value(x)) => a[row] == Some(x)
     (Timestamps(a, _, _), TimestampValue(x)) => a[row] == Some(x)
@@ -78,10 +82,15 @@ fn Column::equals_value(self : Column, row : Int, value : Value) -> Bool {
 }
 
 ///|
-fn Predicate::evaluate(self : Predicate, batch : RecordBatch, row : Int) -> Bool {
+fn Predicate::evaluate(
+  self : Predicate,
+  batch : RecordBatch,
+  row : Int,
+) -> Bool {
   match self {
     Eq(index, value) => batch.columns[index].equals_value(row, value)
-    Ne(index, value) => batch.columns[index].valid_at(row) &&
+    Ne(index, value) =>
+      batch.columns[index].valid_at(row) &&
       !batch.columns[index].equals_value(row, value)
     IsNull(index) => !batch.columns[index].valid_at(row)
     IsNotNull(index) => batch.columns[index].valid_at(row)
@@ -101,13 +110,18 @@ pub fn RecordBatch::filter_where(
   predicate.check(self.schema)
   let indices = []
   for i in 0..<self.num_rows {
-    if predicate.evaluate(self, i) { indices.push(i) }
+    if predicate.evaluate(self, i) {
+      indices.push(i)
+    }
   }
   self.take(indices)
 }
 
 ///|
-pub fn Table::filter_where(self : Table, predicate : Predicate) -> Table raise ArrowError {
+pub fn Table::filter_where(
+  self : Table,
+  predicate : Predicate,
+) -> Table raise ArrowError {
   predicate.check(self.schema)
   let batches = []
   for i in 0..<self.num_batches() {

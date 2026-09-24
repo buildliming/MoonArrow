@@ -23,9 +23,18 @@ pub fn IncrementalReader::new(
 ) -> IncrementalReader raise ArrowError {
   limits.validate()
   {
-    limits, pending: [], needed: 4, stage: 0, prefix: 0, metadata_size: 0,
-    schema_value: None, dictionaries: [], dictionary_messages: 0, batches: 0,
-    finished: false, failed: false,
+    limits,
+    pending: [],
+    needed: 4,
+    stage: 0,
+    prefix: 0,
+    metadata_size: 0,
+    schema_value: None,
+    dictionaries: [],
+    dictionary_messages: 0,
+    batches: 0,
+    finished: false,
+    failed: false,
   }
 }
 
@@ -64,24 +73,35 @@ fn IncrementalReader::process_frame(
   }
   match self.schema_value {
     None => {
-      if frame.kind != 1 { raise Invalid("stream must start with a schema") }
-      self.schema_value = Some(decode_schema(frame.metadata, frame.header, self.limits))
+      if frame.kind != 1 {
+        raise Invalid("stream must start with a schema")
+      }
+      self.schema_value = Some(
+        decode_schema(frame.metadata, frame.header, self.limits),
+      )
     }
-    Some(schema) => {
+    Some(schema) =>
       if frame.kind == 2 {
         if self.dictionary_messages >= self.limits.max_dictionary_messages {
           raise LimitExceeded("dictionary message count")
         }
-        decode_dictionary_frame(frame, schema, self.dictionaries, self.limits, true)
+        decode_dictionary_frame(
+          frame,
+          schema,
+          self.dictionaries,
+          self.limits,
+          true,
+        )
         self.dictionary_messages += 1
       } else if frame.kind == 3 {
-        if self.batches >= self.limits.max_batches { raise LimitExceeded("batch count") }
+        if self.batches >= self.limits.max_batches {
+          raise LimitExceeded("batch count")
+        }
         output.push(decode_body(frame, schema, self.limits, self.dictionaries))
         self.batches += 1
       } else {
         raise Unsupported("unexpected IPC message type")
       }
-    }
   }
   self.reset_frame()
 }
@@ -107,28 +127,40 @@ fn IncrementalReader::advance(
     self.metadata_size = read_i32(Bytes::from_array(self.pending), 4)
     self.stage = 2
   } else if self.stage == 2 {
-    let metadata = slice_bytes(Bytes::from_array(self.pending), self.prefix,
-      self.metadata_size)
+    let metadata = slice_bytes(
+      Bytes::from_array(self.pending),
+      self.prefix,
+      self.metadata_size,
+    )
     let root = follow_offset(metadata, 0)
-    let body_size = bounded_i64(field_long(metadata, root, 3),
-      self.limits.max_body_bytes, "body size")
+    let body_size = bounded_i64(
+      field_long(metadata, root, 3),
+      self.limits.max_body_bytes,
+      "body size",
+    )
     if body_size > 0x7fffffff - self.pending.length() {
       raise LimitExceeded("frame size")
     }
     self.needed = self.pending.length() + body_size
     self.stage = 3
-    if body_size == 0 { self.process_frame(output) }
+    if body_size == 0 {
+      self.process_frame(output)
+    }
     return
   } else {
     self.process_frame(output)
     return
   }
-  if self.metadata_size < 0 { raise Invalid("negative metadata size") }
+  if self.metadata_size < 0 {
+    raise Invalid("negative metadata size")
+  }
   if self.metadata_size > self.limits.max_metadata_bytes {
     raise LimitExceeded("metadata size")
   }
   if self.metadata_size == 0 {
-    if self.schema_value is None { raise Invalid("EOS before schema") }
+    if self.schema_value is None {
+      raise Invalid("EOS before schema")
+    }
     self.finished = true
     self.reset_frame()
     return
@@ -137,7 +169,9 @@ fn IncrementalReader::advance(
     raise LimitExceeded("frame size")
   }
   self.needed = self.prefix + self.metadata_size
-  if self.pending.length() == self.needed { self.advance(output) }
+  if self.pending.length() == self.needed {
+    self.advance(output)
+  }
 }
 
 ///|
@@ -147,17 +181,25 @@ pub fn IncrementalReader::push(
   self : IncrementalReader,
   chunk : Bytes,
 ) -> Array[RecordBatch] raise ArrowError {
-  if self.failed { raise Invalid("incremental reader failed") }
+  if self.failed {
+    raise Invalid("incremental reader failed")
+  }
   if self.finished {
-    if !chunk.is_empty() { raise Invalid("bytes after end-of-stream marker") }
+    if !chunk.is_empty() {
+      raise Invalid("bytes after end-of-stream marker")
+    }
     return []
   }
   self.failed = true
   let output = []
   for byte in chunk {
-    if self.finished { raise Invalid("bytes after end-of-stream marker") }
+    if self.finished {
+      raise Invalid("bytes after end-of-stream marker")
+    }
     self.pending.push(byte)
-    if self.pending.length() == self.needed { self.advance(output) }
+    if self.pending.length() == self.needed {
+      self.advance(output)
+    }
   }
   self.failed = false
   output
@@ -165,11 +207,19 @@ pub fn IncrementalReader::push(
 
 ///|
 /// Signal final EOF. Clean EOF at a message boundary is allowed without EOS.
-pub fn IncrementalReader::finish(self : IncrementalReader) -> Unit raise ArrowError {
-  if self.failed { raise Invalid("incremental reader failed") }
+pub fn IncrementalReader::finish(
+  self : IncrementalReader,
+) -> Unit raise ArrowError {
+  if self.failed {
+    raise Invalid("incremental reader failed")
+  }
   self.failed = true
-  if self.schema_value is None { raise Invalid("missing schema message") }
-  if !self.pending.is_empty() { raise Invalid("truncated IPC stream") }
+  if self.schema_value is None {
+    raise Invalid("missing schema message")
+  }
+  if !self.pending.is_empty() {
+    raise Invalid("truncated IPC stream")
+  }
   self.finished = true
   self.failed = false
 }
@@ -186,21 +236,36 @@ pub struct IncrementalWriter {
 }
 
 ///|
-pub fn IncrementalWriter::new(schema : Schema) -> IncrementalWriter raise ArrowError {
+pub fn IncrementalWriter::new(
+  schema : Schema,
+) -> IncrementalWriter raise ArrowError {
   validate_schema(schema)
-  { schema_value: copy_schema(schema), dictionaries: [], started: false,
-    finished: false, failed: false, }
+  {
+    schema_value: copy_schema(schema),
+    dictionaries: [],
+    started: false,
+    finished: false,
+    failed: false,
+  }
 }
 
 ///|
-pub fn IncrementalWriter::start(self : IncrementalWriter) -> Bytes raise ArrowError {
+pub fn IncrementalWriter::start(
+  self : IncrementalWriter,
+) -> Bytes raise ArrowError {
   if self.started || self.finished || self.failed {
     raise Invalid("stream writer already started or finished")
   }
   self.started = true
   let out : Array[Byte] = []
-  write_frame(out, schema_message(self.schema_value,
-    replacement=schema_has_dictionary(self.schema_value)), b"")
+  write_frame(
+    out,
+    schema_message(
+      self.schema_value,
+      replacement=schema_has_dictionary(self.schema_value),
+    ),
+    b"",
+  )
   Bytes::from_array(out)
 }
 
@@ -215,9 +280,17 @@ pub fn IncrementalWriter::write_batch(
   }
   self.failed = true
   batch.validate()
-  if batch.schema != self.schema_value { raise Invalid("batch schema mismatch") }
+  if batch.schema != self.schema_value {
+    raise Invalid("batch schema mismatch")
+  }
   let out : Array[Byte] = []
-  emit_dictionary_updates(out, self.schema_value, batch, self.dictionaries, true)
+  emit_dictionary_updates(
+    out,
+    self.schema_value,
+    batch,
+    self.dictionaries,
+    true,
+  )
   let layout = encode_body(batch)
   write_frame(out, batch_message(batch.num_rows, layout), layout.body)
   self.failed = false
@@ -225,7 +298,9 @@ pub fn IncrementalWriter::write_batch(
 }
 
 ///|
-pub fn IncrementalWriter::finish(self : IncrementalWriter) -> Bytes raise ArrowError {
+pub fn IncrementalWriter::finish(
+  self : IncrementalWriter,
+) -> Bytes raise ArrowError {
   if !self.started || self.finished || self.failed {
     raise Invalid("stream writer is not active")
   }

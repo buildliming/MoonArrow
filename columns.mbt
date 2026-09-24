@@ -16,145 +16,184 @@ fn encode_column(
   buffers : Array[(Int, Int)],
   column : Column,
 ) -> Unit raise ArrowError {
-    let n = column.length()
-    let nulls = column.null_count()
-    nodes.push((n, nulls))
-    if column is Nulls(_) {
-      return
+  let n = column.length()
+  let nulls = column.null_count()
+  nodes.push((n, nulls))
+  if column is Nulls(_) {
+    return
+  }
+  let bitmap : Array[Byte] = []
+  if nulls > 0 {
+    ignore(reserve(bitmap, n / 8 + (if n % 8 != 0 { 1 } else { 0 })))
+    for i in 0..<n {
+      if column.valid_at(i) {
+        bitmap[i / 8] = (bitmap[i / 8].to_int() | (1 << (i % 8))).to_byte()
+      }
     }
-    let bitmap : Array[Byte] = []
-    if nulls > 0 {
-      ignore(reserve(bitmap, n / 8 + (if n % 8 != 0 { 1 } else { 0 })))
+  }
+  add_buffer(body, buffers, Bytes::from_array(bitmap))
+  let values : Array[Byte] = []
+  match column {
+    Nulls(_) => ()
+    Booleans(a) => {
+      ignore(reserve(values, n / 8 + (if n % 8 != 0 { 1 } else { 0 })))
       for i in 0..<n {
-        if column.valid_at(i) {
-          bitmap[i / 8] = (bitmap[i / 8].to_int() | (1 << (i % 8))).to_byte()
+        if a[i] == Some(true) {
+          values[i / 8] = (values[i / 8].to_int() | (1 << (i % 8))).to_byte()
         }
       }
     }
-    add_buffer(body, buffers, Bytes::from_array(bitmap))
-    let values : Array[Byte] = []
-    match column {
-      Nulls(_) => ()
-      Booleans(a) => {
-        ignore(reserve(values, n / 8 + (if n % 8 != 0 { 1 } else { 0 })))
-        for i in 0..<n {
-          if a[i] == Some(true) {
-            values[i / 8] = (values[i / 8].to_int() | (1 << (i % 8))).to_byte()
-          }
-        }
-      }
-      Int8s(a) => for value in a {
+    Int8s(a) =>
+      for value in a {
         put_fixed(values, reserve(values, 1), value.unwrap_or(0).to_int64(), 1)
       }
-      Int16s(a) => for value in a {
+    Int16s(a) =>
+      for value in a {
         put_fixed(values, reserve(values, 2), value.unwrap_or(0).to_int64(), 2)
       }
-      Int32s(a) =>
-        for value in a {
-          put_i32(values, reserve(values, 4), value.unwrap_or(0))
-        }
-      Int64s(a) =>
-        for value in a {
-          put_i64(values, reserve(values, 8), value.unwrap_or(0L))
-        }
-      UInt8s(a) => for value in a {
-        put_fixed(values, reserve(values, 1), value.unwrap_or(0).to_int64(), 1)
-      }
-      UInt16s(a) => for value in a {
-        put_fixed(values, reserve(values, 2), value.unwrap_or(0).to_int64(), 2)
-      }
-      UInt32s(a) => for value in a {
-        put_i32(values, reserve(values, 4), value.unwrap_or(0U).reinterpret_as_int())
-      }
-      UInt64s(a) => for value in a {
-        put_i64(values, reserve(values, 8), value.unwrap_or(0UL).reinterpret_as_int64())
-      }
-      Float32s(a) => for value in a {
-        put_i32(values, reserve(values, 4), value.unwrap_or(0.0F).reinterpret_as_int())
-      }
-      Float64s(a) =>
-        for value in a {
-          put_i64(
-            values,
-            reserve(values, 8),
-            value.unwrap_or(0.0).reinterpret_as_int64(),
-          )
-        }
-      Date32s(a) => for value in a {
+    Int32s(a) =>
+      for value in a {
         put_i32(values, reserve(values, 4), value.unwrap_or(0))
       }
-      Date64s(a) => for value in a {
+    Int64s(a) =>
+      for value in a {
         put_i64(values, reserve(values, 8), value.unwrap_or(0L))
       }
-      Timestamps(a, _, _) | Durations(a, _) => for value in a {
+    UInt8s(a) =>
+      for value in a {
+        put_fixed(values, reserve(values, 1), value.unwrap_or(0).to_int64(), 1)
+      }
+    UInt16s(a) =>
+      for value in a {
+        put_fixed(values, reserve(values, 2), value.unwrap_or(0).to_int64(), 2)
+      }
+    UInt32s(a) =>
+      for value in a {
+        put_i32(
+          values,
+          reserve(values, 4),
+          value.unwrap_or(0U).reinterpret_as_int(),
+        )
+      }
+    UInt64s(a) =>
+      for value in a {
+        put_i64(
+          values,
+          reserve(values, 8),
+          value.unwrap_or(0UL).reinterpret_as_int64(),
+        )
+      }
+    Float32s(a) =>
+      for value in a {
+        put_i32(
+          values,
+          reserve(values, 4),
+          value.unwrap_or(0.0F).reinterpret_as_int(),
+        )
+      }
+    Float64s(a) =>
+      for value in a {
+        put_i64(
+          values,
+          reserve(values, 8),
+          value.unwrap_or(0.0).reinterpret_as_int64(),
+        )
+      }
+    Date32s(a) =>
+      for value in a {
+        put_i32(values, reserve(values, 4), value.unwrap_or(0))
+      }
+    Date64s(a) =>
+      for value in a {
         put_i64(values, reserve(values, 8), value.unwrap_or(0L))
       }
-      Lists(offsets, _, child) => {
-        for offset in offsets {
-          put_i32(values, reserve(values, 4), offset)
-        }
-        add_buffer(body, buffers, Bytes::from_array(values))
+    Timestamps(a, _, _) | Durations(a, _) =>
+      for value in a {
+        put_i64(values, reserve(values, 8), value.unwrap_or(0L))
+      }
+    Lists(offsets, _, child) => {
+      for offset in offsets {
+        put_i32(values, reserve(values, 4), offset)
+      }
+      add_buffer(body, buffers, Bytes::from_array(values))
+      encode_column(body, nodes, buffers, child)
+      return
+    }
+    LargeLists(offsets, _, child) => {
+      for offset in offsets {
+        put_i64(values, reserve(values, 8), offset.to_int64())
+      }
+      add_buffer(body, buffers, Bytes::from_array(values))
+      encode_column(body, nodes, buffers, child)
+      return
+    }
+    Maps(offsets, _, child, _) => {
+      for offset in offsets {
+        put_i32(values, reserve(values, 4), offset)
+      }
+      add_buffer(body, buffers, Bytes::from_array(values))
+      encode_column(body, nodes, buffers, child)
+      return
+    }
+    FixedLists(_, child, _) => {
+      encode_column(body, nodes, buffers, child)
+      return
+    }
+    Structs(_, children) => {
+      for child in children {
         encode_column(body, nodes, buffers, child)
-        return
       }
-      LargeLists(offsets, _, child) => {
-        for offset in offsets {
-          put_i64(values, reserve(values, 8), offset.to_int64())
-        }
-        add_buffer(body, buffers, Bytes::from_array(values))
-        encode_column(body, nodes, buffers, child)
-        return
-      }
-      FixedLists(_, child, _) => {
-        encode_column(body, nodes, buffers, child)
-        return
-      }
-      Structs(_, children) => {
-        for child in children {
-          encode_column(body, nodes, buffers, child)
-        }
-        return
-      }
-      Dictionaries(indices, _, _, _) => for index in indices {
+      return
+    }
+    Dictionaries(indices, _, _, _) =>
+      for index in indices {
         put_i32(values, reserve(values, 4), index.unwrap_or(0))
       }
-      FixedBinaries(a, width) => for value in a {
+    FixedBinaries(a, width) =>
+      for value in a {
         match value {
           Some(bytes) => append_bytes(values, bytes)
           None => ignore(reserve(values, width))
         }
       }
-      Strings(_) | Binaries(_) | LargeStrings(_) | LargeBinaries(_) => {
-        let offsets : Array[Byte] = []
-        let large = column is LargeStrings(_) || column is LargeBinaries(_)
-        if large { put_i64(offsets, reserve(offsets, 8), 0L) }
-        else { put_i32(offsets, reserve(offsets, 4), 0) }
-        for i in 0..<n {
-          let bytes = match column {
-            Strings(a) =>
-              match a[i] {
-                Some(s) => @utf8.encode(s)
-                None => b""
-              }
-            Binaries(a) => a[i].unwrap_or(b"")
-            LargeStrings(a) => match a[i] {
+    Strings(_) | Binaries(_) | LargeStrings(_) | LargeBinaries(_) => {
+      let offsets : Array[Byte] = []
+      let large = column is LargeStrings(_) || column is LargeBinaries(_)
+      if large {
+        put_i64(offsets, reserve(offsets, 8), 0L)
+      } else {
+        put_i32(offsets, reserve(offsets, 4), 0)
+      }
+      for i in 0..<n {
+        let bytes = match column {
+          Strings(a) =>
+            match a[i] {
               Some(s) => @utf8.encode(s)
               None => b""
             }
-            LargeBinaries(a) => a[i].unwrap_or(b"")
-            _ => b""
-          }
-          if bytes.length() > 0x7fffffff - values.length() {
-            raise LimitExceeded("32-bit binary offsets")
-          }
-          append_bytes(values, bytes)
-          if large { put_i64(offsets, reserve(offsets, 8), values.length().to_int64()) }
-          else { put_i32(offsets, reserve(offsets, 4), values.length()) }
+          Binaries(a) => a[i].unwrap_or(b"")
+          LargeStrings(a) =>
+            match a[i] {
+              Some(s) => @utf8.encode(s)
+              None => b""
+            }
+          LargeBinaries(a) => a[i].unwrap_or(b"")
+          _ => b""
         }
-        add_buffer(body, buffers, Bytes::from_array(offsets))
+        if bytes.length() > 0x7fffffff - values.length() {
+          raise LimitExceeded("32-bit binary offsets")
+        }
+        append_bytes(values, bytes)
+        if large {
+          put_i64(offsets, reserve(offsets, 8), values.length().to_int64())
+        } else {
+          put_i32(offsets, reserve(offsets, 4), values.length())
+        }
       }
+      add_buffer(body, buffers, Bytes::from_array(offsets))
     }
-    add_buffer(body, buffers, Bytes::from_array(values))
+  }
+  add_buffer(body, buffers, Bytes::from_array(values))
 }
 
 ///|
@@ -202,7 +241,7 @@ fn field_layout(field : Field) -> (Int, Int) {
   let mut buffers = match field.data_type {
     Null => 0
     Utf8 | Binary | LargeUtf8 | LargeBinary => 3
-    List | LargeList => 2
+    List | LargeList | Map(_) => 2
     Struct | FixedSizeList(_) => 1
     Dictionary(_, _, _) | FixedSizeBinary(_) => 2
     _ => 2
@@ -216,8 +255,13 @@ fn field_layout(field : Field) -> (Int, Int) {
 }
 
 ///|
-fn next_body_buffer(frame : Frame, cursor : BodyCursor) -> Bytes raise ArrowError {
-  if cursor.buffer >= cursor.buffer_count { raise Invalid("missing body buffer") }
+fn next_body_buffer(
+  frame : Frame,
+  cursor : BodyCursor,
+) -> Bytes raise ArrowError {
+  if cursor.buffer >= cursor.buffer_count {
+    raise Invalid("missing body buffer")
+  }
   let result = body_buffer(frame, cursor.buffers, cursor.buffer)
   cursor.buffer += 1
   result
@@ -233,21 +277,32 @@ fn decode_column(
   depth : Int,
   dictionaries : Array[DictionaryEntry],
 ) -> Column raise ArrowError {
-  if depth > limits.max_depth { raise LimitExceeded("nested column depth") }
-  if cursor.node >= cursor.node_count { raise Invalid("missing field node") }
+  if depth > limits.max_depth {
+    raise LimitExceeded("nested column depth")
+  }
+  if cursor.node >= cursor.node_count {
+    raise Invalid("missing field node")
+  }
   let metadata = frame.metadata
   let base = cursor.nodes + cursor.node * 16
   cursor.node += 1
-  let rows = bounded_i64(read_i64(metadata, base), limits.max_values_per_batch,
-    "field node length")
+  let rows = bounded_i64(
+    read_i64(metadata, base),
+    limits.max_values_per_batch,
+    "field node length",
+  )
   let nulls = bounded_i64(read_i64(metadata, base + 8), rows, "null count")
   if expected >= 0 && rows != expected {
     raise Invalid("field node length differs from parent")
   }
-  if rows > cursor.remaining_values { raise LimitExceeded("values per batch") }
+  if rows > cursor.remaining_values {
+    raise LimitExceeded("values per batch")
+  }
   cursor.remaining_values -= rows
   if field.data_type == Null {
-    if nulls != rows { raise Invalid("Null column null count differs from length") }
+    if nulls != rows {
+      raise Invalid("Null column null count differs from length")
+    }
     return Nulls(rows)
   }
   let validity = next_body_buffer(frame, cursor)
@@ -261,38 +316,88 @@ fn decode_column(
     let bit = validity.is_empty() ||
       (validity[j / 8].to_int() & (1 << (j % 8))) != 0
     valid.push(bit)
-    if !bit { actual_nulls += 1 }
+    if !bit {
+      actual_nulls += 1
+    }
   }
-  if actual_nulls != nulls { raise Invalid("null count does not match validity bitmap") }
-  if field.data_type == List || field.data_type == LargeList {
-    if field.children.length() != 1 { raise Invalid("List requires one child") }
+  if actual_nulls != nulls {
+    raise Invalid("null count does not match validity bitmap")
+  }
+  if field.data_type == List ||
+    field.data_type == LargeList ||
+    field.data_type is Map(_) {
+    if field.children.length() != 1 {
+      raise Invalid("List requires one child")
+    }
     let offsets_bytes = next_body_buffer(frame, cursor)
     let width = if field.data_type == LargeList { 8 } else { 4 }
-    if rows >= offsets_bytes.length() / width { raise Invalid("short List offsets") }
+    if rows >= offsets_bytes.length() / width {
+      raise Invalid("short List offsets")
+    }
     let offsets = []
     let mut previous = if width == 8 {
-      bounded_i64(read_i64(offsets_bytes, 0), limits.max_values_per_batch, "LargeList offset")
-    } else { read_i32(offsets_bytes, 0) }
-    if previous < 0 { raise Invalid("negative List offset") }
+      bounded_i64(
+        read_i64(offsets_bytes, 0),
+        limits.max_values_per_batch,
+        "LargeList offset",
+      )
+    } else {
+      read_i32(offsets_bytes, 0)
+    }
+    if previous < 0 {
+      raise Invalid("negative List offset")
+    }
     offsets.push(previous)
     for i in 0..<rows {
       let current = if width == 8 {
-        bounded_i64(read_i64(offsets_bytes, (i + 1) * 8),
-          limits.max_values_per_batch, "LargeList offset")
-      } else { read_i32(offsets_bytes, (i + 1) * 4) }
-      if current < previous { raise Invalid("non-monotonic List offsets") }
+        bounded_i64(
+          read_i64(offsets_bytes, (i + 1) * 8),
+          limits.max_values_per_batch,
+          "LargeList offset",
+        )
+      } else {
+        read_i32(offsets_bytes, (i + 1) * 4)
+      }
+      if current < previous {
+        raise Invalid("non-monotonic List offsets")
+      }
       offsets.push(current)
       previous = current
     }
-    let child = decode_column(frame, field.children[0], -1, cursor, limits, depth + 1, dictionaries)
-    if previous > child.length() { raise Invalid("List offset exceeds child length") }
-    if field.data_type == LargeList { return LargeLists(offsets, valid, child) }
+    let child = decode_column(
+      frame,
+      field.children[0],
+      -1,
+      cursor,
+      limits,
+      depth + 1,
+      dictionaries,
+    )
+    if previous > child.length() {
+      raise Invalid("List offset exceeds child length")
+    }
+    if field.data_type == LargeList {
+      return LargeLists(offsets, valid, child)
+    }
+    if field.data_type is Map(sorted) {
+      return Maps(offsets, valid, child, sorted)
+    }
     return Lists(offsets, valid, child)
   }
   if field.data_type == Struct {
     let children = []
     for child_field in field.children {
-      children.push(decode_column(frame, child_field, rows, cursor, limits, depth + 1, dictionaries))
+      children.push(
+        decode_column(
+          frame,
+          child_field,
+          rows,
+          cursor,
+          limits,
+          depth + 1,
+          dictionaries,
+        ),
+      )
     }
     return Structs(valid, children)
   }
@@ -300,17 +405,35 @@ fn decode_column(
     if field.children.length() != 1 || rows > limits.max_values_per_batch / size {
       raise LimitExceeded("FixedSizeList child values")
     }
-    let child = decode_column(frame, field.children[0], rows * size,
-      cursor, limits, depth + 1, dictionaries)
+    let child = decode_column(
+      frame,
+      field.children[0],
+      rows * size,
+      cursor,
+      limits,
+      depth + 1,
+      dictionaries,
+    )
     return FixedLists(valid, child, size)
   }
   let values = next_body_buffer(frame, cursor)
   if field.data_type is Dictionary(id, _, ordered) {
-    if rows > values.length() / 4 { raise Invalid("short dictionary index buffer") }
-    let indices = Array::makei(rows, j => if valid[j] {
-      Some(read_i32(values, j * 4))
-    } else { None })
-    return Dictionaries(indices, dictionary_value(dictionaries, id), id, ordered)
+    if rows > values.length() / 4 {
+      raise Invalid("short dictionary index buffer")
+    }
+    let indices = Array::makei(rows, j => {
+      if valid[j] {
+        Some(read_i32(values, j * 4))
+      } else {
+        None
+      }
+    })
+    return Dictionaries(
+      indices,
+      dictionary_value(dictionaries, id),
+      id,
+      ordered,
+    )
   }
   match field.data_type {
     Null => Column::Nulls(rows)
@@ -339,27 +462,76 @@ fn decode_column(
         raise Invalid("short fixed-width buffer")
       }
       match field.data_type {
-        Int8 => Int8s(Array::makei(rows, j => if valid[j] {
-          Some(signed_fixed(read_fixed(values, j * width, width), width))
-        } else { None }))
-        Int16 => Int16s(Array::makei(rows, j => if valid[j] {
-          Some(signed_fixed(read_fixed(values, j * width, width), width))
-        } else { None }))
-        UInt8 => UInt8s(Array::makei(rows, j => if valid[j] {
-          Some(read_fixed(values, j * width, width).to_int())
-        } else { None }))
-        UInt16 => UInt16s(Array::makei(rows, j => if valid[j] {
-          Some(read_fixed(values, j * width, width).to_int())
-        } else { None }))
-        UInt32 => UInt32s(Array::makei(rows, j => if valid[j] {
-          Some(read_i32(values, j * width).reinterpret_as_uint())
-        } else { None }))
-        UInt64 => UInt64s(Array::makei(rows, j => if valid[j] {
-          Some(read_i64(values, j * width).reinterpret_as_uint64())
-        } else { None }))
-        Float32 => Float32s(Array::makei(rows, j => if valid[j] {
-          Some(Float::reinterpret_from_int(read_i32(values, j * width)))
-        } else { None }))
+        Int8 =>
+          Int8s(
+            Array::makei(rows, j => {
+              if valid[j] {
+                Some(signed_fixed(read_fixed(values, j * width, width), width))
+              } else {
+                None
+              }
+            }),
+          )
+        Int16 =>
+          Int16s(
+            Array::makei(rows, j => {
+              if valid[j] {
+                Some(signed_fixed(read_fixed(values, j * width, width), width))
+              } else {
+                None
+              }
+            }),
+          )
+        UInt8 =>
+          UInt8s(
+            Array::makei(rows, j => {
+              if valid[j] {
+                Some(read_fixed(values, j * width, width).to_int())
+              } else {
+                None
+              }
+            }),
+          )
+        UInt16 =>
+          UInt16s(
+            Array::makei(rows, j => {
+              if valid[j] {
+                Some(read_fixed(values, j * width, width).to_int())
+              } else {
+                None
+              }
+            }),
+          )
+        UInt32 =>
+          UInt32s(
+            Array::makei(rows, j => {
+              if valid[j] {
+                Some(read_i32(values, j * width).reinterpret_as_uint())
+              } else {
+                None
+              }
+            }),
+          )
+        UInt64 =>
+          UInt64s(
+            Array::makei(rows, j => {
+              if valid[j] {
+                Some(read_i64(values, j * width).reinterpret_as_uint64())
+              } else {
+                None
+              }
+            }),
+          )
+        Float32 =>
+          Float32s(
+            Array::makei(rows, j => {
+              if valid[j] {
+                Some(Float::reinterpret_from_int(read_i32(values, j * width)))
+              } else {
+                None
+              }
+            }),
+          )
         _ => raise Invalid("internal fixed-width type")
       }
     }
@@ -369,13 +541,7 @@ fn decode_column(
       }
       let result = []
       for j in 0..<rows {
-        result.push(
-          if valid[j] {
-            Some(read_i32(values, j * 4))
-          } else {
-            None
-          },
-        )
+        result.push(if valid[j] { Some(read_i32(values, j * 4)) } else { None })
       }
       Int32s(result)
     }
@@ -385,13 +551,7 @@ fn decode_column(
       }
       let result = []
       for j in 0..<rows {
-        result.push(
-          if valid[j] {
-            Some(read_i64(values, j * 8))
-          } else {
-            None
-          },
-        )
+        result.push(if valid[j] { Some(read_i64(values, j * 8)) } else { None })
       }
       Int64s(result)
     }
@@ -412,16 +572,30 @@ fn decode_column(
       Float64s(result)
     }
     Date32 => {
-      if rows > values.length() / 4 { raise Invalid("short Date32 buffer") }
-      Date32s(Array::makei(rows, j => if valid[j] {
-        Some(read_i32(values, j * 4))
-      } else { None }))
+      if rows > values.length() / 4 {
+        raise Invalid("short Date32 buffer")
+      }
+      Date32s(
+        Array::makei(rows, j => {
+          if valid[j] {
+            Some(read_i32(values, j * 4))
+          } else {
+            None
+          }
+        }),
+      )
     }
     Date64 | Timestamp(_, _) | Duration(_) => {
-      if rows > values.length() / 8 { raise Invalid("short temporal buffer") }
-      let result = Array::makei(rows, j => if valid[j] {
-        Some(read_i64(values, j * 8))
-      } else { None })
+      if rows > values.length() / 8 {
+        raise Invalid("short temporal buffer")
+      }
+      let result = Array::makei(rows, j => {
+        if valid[j] {
+          Some(read_i64(values, j * 8))
+        } else {
+          None
+        }
+      })
       match field.data_type {
         Date64 => Date64s(result)
         Timestamp(unit, timezone) => Timestamps(result, unit, timezone)
@@ -430,10 +604,19 @@ fn decode_column(
       }
     }
     FixedSizeBinary(width) => {
-      if rows > values.length() / width { raise Invalid("short fixed binary buffer") }
-      FixedBinaries(Array::makei(rows, j => if valid[j] {
-        Some(slice_bytes(values, j * width, width))
-      } else { None }), width)
+      if rows > values.length() / width {
+        raise Invalid("short fixed binary buffer")
+      }
+      FixedBinaries(
+        Array::makei(rows, j => {
+          if valid[j] {
+            Some(slice_bytes(values, j * width, width))
+          } else {
+            None
+          }
+        }),
+        width,
+      )
     }
     Utf8 | Binary | LargeUtf8 | LargeBinary => {
       let bytes = next_body_buffer(frame, cursor)
@@ -446,14 +629,22 @@ fn decode_column(
       let binaries = []
       let mut start = if large {
         bounded_i64(read_i64(values, 0), bytes.length(), "large binary offset")
-      } else { read_i32(values, 0) }
+      } else {
+        read_i32(values, 0)
+      }
       if start < 0 || start > bytes.length() {
         raise Invalid("invalid first binary offset")
       }
       for j in 0..<rows {
         let end = if large {
-          bounded_i64(read_i64(values, (j + 1) * 8), bytes.length(), "large binary offset")
-        } else { read_i32(values, (j + 1) * 4) }
+          bounded_i64(
+            read_i64(values, (j + 1) * 8),
+            bytes.length(),
+            "large binary offset",
+          )
+        } else {
+          read_i32(values, (j + 1) * 4)
+        }
         if end < start || end > bytes.length() {
           raise Invalid("non-monotonic or out-of-range offset")
         }
@@ -484,11 +675,10 @@ fn decode_column(
         _ => raise Invalid("internal variable binary type")
       }
     }
-    List | LargeList | FixedSizeList(_) | Struct =>
+    List | LargeList | FixedSizeList(_) | Map(_) | Struct =>
       raise Invalid("internal nested dispatch")
     Dictionary(_, _, _) => raise Invalid("internal dictionary dispatch")
   }
-
 }
 
 ///|
@@ -498,16 +688,23 @@ fn decode_body(
   limits : ReadLimits,
   dictionaries : Array[DictionaryEntry],
 ) -> RecordBatch raise ArrowError {
-  if frame.kind != 3 { raise Unsupported("expected RecordBatch message") }
+  if frame.kind != 3 {
+    raise Unsupported("expected RecordBatch message")
+  }
   let metadata = frame.metadata
   let table = frame.header
   if field_ref(metadata, table, 3) is Some(_) {
     raise Unsupported("compressed IPC body")
   }
   let (_, variadic) = vector_info(metadata, table, 4, 8, limits.max_fields)
-  if variadic != 0 { raise Unsupported("variadic buffers") }
-  let rows = bounded_i64(field_long(metadata, table, 0),
-    limits.max_rows_per_batch, "rows per batch")
+  if variadic != 0 {
+    raise Unsupported("variadic buffers")
+  }
+  let rows = bounded_i64(
+    field_long(metadata, table, 0),
+    limits.max_rows_per_batch,
+    "rows per batch",
+  )
   let mut expected_nodes = 0
   let mut expected_buffers = 0
   for field in schema.fields {
@@ -515,24 +712,42 @@ fn decode_body(
     expected_nodes += n
     expected_buffers += b
   }
-  if expected_nodes > limits.max_fields { raise LimitExceeded("field node count") }
+  if expected_nodes > limits.max_fields {
+    raise LimitExceeded("field node count")
+  }
   let (nodes, node_count) = vector_info(metadata, table, 1, 16, expected_nodes)
-  if node_count != expected_nodes { raise Invalid("field node count differs from schema") }
-  let (buffers, buffer_count) = vector_info(metadata, table, 2, 16, expected_buffers)
-  if buffer_count != expected_buffers { raise Invalid("buffer count differs from schema") }
+  if node_count != expected_nodes {
+    raise Invalid("field node count differs from schema")
+  }
+  let (buffers, buffer_count) = vector_info(
+    metadata, table, 2, 16, expected_buffers,
+  )
+  if buffer_count != expected_buffers {
+    raise Invalid("buffer count differs from schema")
+  }
   let mut remaining_bytes = limits.max_body_bytes
   for i in 0..<buffer_count {
-    let size = bounded_i64(read_i64(metadata, buffers + i * 16 + 8),
-      remaining_bytes, "total buffer bytes")
+    let size = bounded_i64(
+      read_i64(metadata, buffers + i * 16 + 8),
+      remaining_bytes,
+      "total buffer bytes",
+    )
     remaining_bytes -= size
   }
   let cursor = BodyCursor::{
-    nodes, node_count, node: 0, buffers, buffer_count, buffer: 0,
+    nodes,
+    node_count,
+    node: 0,
+    buffers,
+    buffer_count,
+    buffer: 0,
     remaining_values: limits.max_values_per_batch,
   }
   let columns = []
   for field in schema.fields {
-    columns.push(decode_column(frame, field, rows, cursor, limits, 0, dictionaries))
+    columns.push(
+      decode_column(frame, field, rows, cursor, limits, 0, dictionaries),
+    )
   }
   if cursor.node != node_count || cursor.buffer != buffer_count {
     raise Invalid("unused field node or buffer")

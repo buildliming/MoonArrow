@@ -6,6 +6,10 @@ import {
 }
 
 // Values
+pub fn inspect_file(Bytes, limits? : ReadLimits) -> FileIndex raise ArrowError
+
+pub fn inspect_stream(Bytes, limits? : ReadLimits) -> StreamIndex raise ArrowError
+
 pub fn read_file(Bytes, limits? : ReadLimits) -> IpcData raise ArrowError
 
 pub fn read_stream(Bytes, limits? : ReadLimits) -> IpcData raise ArrowError
@@ -22,27 +26,99 @@ pub(all) suberror ArrowError {
 } derive(@debug.Debug)
 
 // Types and methods
+pub struct BatchBuilder {
+  // private fields
+}
+pub fn BatchBuilder::append_batch(Self, RecordBatch) -> Unit raise ArrowError
+pub fn BatchBuilder::append_row(Self, Array[Value?]) -> Unit raise ArrowError
+pub fn BatchBuilder::finish(Self) -> RecordBatch raise ArrowError
+pub fn BatchBuilder::new(Schema) -> Self raise ArrowError
+pub fn BatchBuilder::num_rows(Self) -> Int
+
 pub(all) enum Column {
   Nulls(Int)
   Booleans(Array[Bool?])
+  Int8s(Array[Int?])
+  Int16s(Array[Int?])
   Int32s(Array[Int?])
   Int64s(Array[Int64?])
+  UInt8s(Array[Int?])
+  UInt16s(Array[Int?])
+  UInt32s(Array[UInt?])
+  UInt64s(Array[UInt64?])
+  Float32s(Array[Float?])
   Float64s(Array[Double?])
+  Date32s(Array[Int?])
+  Date64s(Array[Int64?])
+  Timestamps(Array[Int64?], TimeUnit, String?)
+  Durations(Array[Int64?], TimeUnit)
+  Lists(Array[Int], Array[Bool], Column)
+  LargeLists(Array[Int], Array[Bool], Column)
+  FixedLists(Array[Bool], Column, Int)
+  Maps(Array[Int], Array[Bool], Column, Bool)
+  Structs(Array[Bool], Array[Column])
+  Dictionaries(Array[Int?], Column, Int64, Bool)
   Strings(Array[String?])
   Binaries(Array[Bytes?])
+  LargeStrings(Array[String?])
+  LargeBinaries(Array[Bytes?])
+  FixedBinaries(Array[Bytes?], Int)
 } derive(@debug.Debug)
 pub fn Column::data_type(Self) -> DataType
+pub fn Column::get(Self, Int) -> Value? raise ArrowError
 pub fn Column::length(Self) -> Int
 pub fn Column::null_count(Self) -> Int
+pub fn Column::slice(Self, Int, Int) -> Self raise ArrowError
+pub fn Column::summary(Self) -> ColumnSummary
+pub fn Column::take(Self, Array[Int]) -> Self raise ArrowError
+
+pub(all) enum ColumnRange {
+  NoRange
+  IntRange(Int, Int)
+  Int64Range(Int64, Int64)
+  UIntRange(UInt, UInt)
+  UInt64Range(UInt64, UInt64)
+  Float32Range(Float, Float)
+  Float64Range(Double, Double)
+  ByteLengthRange(Int, Int, Int64)
+  BooleanCounts(Int, Int)
+} derive(@debug.Debug)
+
+pub(all) struct ColumnSummary {
+  length : Int
+  null_count : Int
+  range : ColumnRange
+} derive(@debug.Debug)
+pub fn ColumnSummary::combine(Self, Self) -> Self raise ArrowError
 
 pub(all) enum DataType {
   Null
   Boolean
+  Int8
+  Int16
   Int32
   Int64
+  UInt8
+  UInt16
+  UInt32
+  UInt64
+  Float32
   Float64
+  Date32
+  Date64
+  Timestamp(TimeUnit, String?)
+  Duration(TimeUnit)
+  List
+  LargeList
+  FixedSizeList(Int)
+  Map(Bool)
+  Struct
+  Dictionary(Int64, DataType, Bool)
   Utf8
   Binary
+  LargeUtf8
+  LargeBinary
+  FixedSizeBinary(Int)
 } derive(Eq, @debug.Debug)
 
 pub(all) struct Field {
@@ -50,26 +126,88 @@ pub(all) struct Field {
   data_type : DataType
   nullable : Bool
   metadata : Array[KeyValue]
+  children : Array[Field]
 } derive(Eq, @debug.Debug)
-pub fn Field::new(String, DataType, nullable? : Bool, metadata? : Array[KeyValue]) -> Self
+pub fn Field::new(String, DataType, nullable? : Bool, metadata? : Array[KeyValue], children? : Array[Self]) -> Self
+
+pub struct FileIndex {
+  schema : Schema
+  batches : Array[MessageInfo]
+  dictionaries : Array[MessageInfo]
+} derive(@debug.Debug)
+pub fn FileIndex::num_batches(Self) -> Int
+pub fn FileIndex::num_dictionaries(Self) -> Int
+pub fn FileIndex::total_body_bytes(Self) -> Int64
 
 pub struct FileReader {
   schema : Schema
   // private fields
 }
 pub fn FileReader::get_batch(Self, Int) -> RecordBatch raise ArrowError
+pub fn FileReader::is_empty(Self) -> Bool
 pub fn FileReader::new(Bytes, limits? : ReadLimits) -> Self raise ArrowError
 pub fn FileReader::num_batches(Self) -> Int
+
+pub struct FileWriter {
+  // private fields
+}
+pub fn FileWriter::finish(Self) -> Bytes raise ArrowError
+pub fn FileWriter::new(Schema) -> Self raise ArrowError
+pub fn FileWriter::start(Self) -> Bytes raise ArrowError
+pub fn FileWriter::write_batch(Self, RecordBatch) -> Bytes raise ArrowError
+
+pub struct IncrementalReader {
+  // private fields
+}
+pub fn IncrementalReader::finish(Self) -> Unit raise ArrowError
+pub fn IncrementalReader::new(limits? : ReadLimits) -> Self raise ArrowError
+pub fn IncrementalReader::num_batches(Self) -> Int
+pub fn IncrementalReader::push(Self, Bytes) -> Array[RecordBatch] raise ArrowError
+pub fn IncrementalReader::schema(Self) -> Schema?
+
+pub struct IncrementalWriter {
+  // private fields
+}
+pub fn IncrementalWriter::finish(Self) -> Bytes raise ArrowError
+pub fn IncrementalWriter::new(Schema) -> Self raise ArrowError
+pub fn IncrementalWriter::start(Self) -> Bytes raise ArrowError
+pub fn IncrementalWriter::write_batch(Self, RecordBatch) -> Bytes raise ArrowError
 
 pub struct IpcData {
   schema : Schema
   batches : Array[RecordBatch]
 } derive(@debug.Debug)
+pub fn IpcData::to_table(Self) -> Table raise ArrowError
 
 pub(all) struct KeyValue {
   key : String
   value : String?
 } derive(Eq, @debug.Debug)
+
+pub(all) struct MessageInfo {
+  offset : Int
+  metadata_bytes : Int
+  body_bytes : Int
+  kind : MessageKind
+  rows : Int?
+  dictionary_id : Int64?
+} derive(@debug.Debug)
+
+pub(all) enum MessageKind {
+  SchemaMessage
+  DictionaryMessage
+  BatchMessage
+} derive(Eq, @debug.Debug)
+
+pub(all) enum Predicate {
+  Eq(Int, Value)
+  Ne(Int, Value)
+  IsNull(Int)
+  IsNotNull(Int)
+  And(Predicate, Predicate)
+  Or(Predicate, Predicate)
+  Not(Predicate)
+} derive(@debug.Debug)
 
 pub(all) struct ReadLimits {
   max_rows_per_batch : Int
@@ -78,6 +216,9 @@ pub(all) struct ReadLimits {
   max_batches : Int
   max_metadata_bytes : Int
   max_body_bytes : Int
+  max_depth : Int
+  max_dictionary_values : Int
+  max_dictionary_messages : Int
 } derive(@debug.Debug)
 pub fn ReadLimits::default() -> Self
 
@@ -86,14 +227,46 @@ pub struct RecordBatch {
   columns : Array[Column]
   num_rows : Int
 } derive(@debug.Debug)
+pub fn RecordBatch::concat(Self, Array[Self]) -> Self raise ArrowError
+pub fn RecordBatch::drop_column(Self, Int) -> Self raise ArrowError
+pub fn RecordBatch::filter(Self, Array[Bool?]) -> Self raise ArrowError
+pub fn RecordBatch::filter_where(Self, Predicate) -> Self raise ArrowError
+pub fn RecordBatch::get_row(Self, Int) -> Array[Value?] raise ArrowError
+pub fn RecordBatch::head(Self, Int) -> Self raise ArrowError
+pub fn RecordBatch::insert_column(Self, Int, Field, Column) -> Self raise ArrowError
+pub fn RecordBatch::is_empty(Self) -> Bool
 pub fn RecordBatch::new(Schema, Array[Column], num_rows? : Int) -> Self raise ArrowError
+pub fn RecordBatch::partition_where(Self, Predicate) -> (Self, Self) raise ArrowError
+pub fn RecordBatch::project(Self, Array[Int]) -> Self raise ArrowError
+pub fn RecordBatch::rename(Self, Int, String) -> Self raise ArrowError
+pub fn RecordBatch::replace_column(Self, Int, Field, Column) -> Self raise ArrowError
+pub fn RecordBatch::select(Self, Array[String]) -> Self raise ArrowError
+pub fn RecordBatch::slice(Self, Int, Int) -> Self raise ArrowError
+pub fn RecordBatch::split_rows(Self, Int) -> Array[Self] raise ArrowError
+pub fn RecordBatch::summaries(Self) -> Array[ColumnSummary] raise ArrowError
+pub fn RecordBatch::tail(Self, Int) -> Self raise ArrowError
+pub fn RecordBatch::take(Self, Array[Int]) -> Self raise ArrowError
 pub fn RecordBatch::validate(Self) -> Unit raise ArrowError
 
 pub(all) struct Schema {
   fields : Array[Field]
   metadata : Array[KeyValue]
 } derive(Eq, @debug.Debug)
+pub fn Schema::drop_field(Self, Int) -> Self raise ArrowError
+pub fn Schema::field_index(Self, String) -> Int raise ArrowError
 pub fn Schema::new(Array[Field], metadata? : Array[KeyValue]) -> Self
+pub fn Schema::num_fields(Self) -> Int
+pub fn Schema::project(Self, Array[Int]) -> Self raise ArrowError
+pub fn Schema::rename(Self, Int, String) -> Self raise ArrowError
+
+pub struct StreamIndex {
+  schema : Schema
+  messages : Array[MessageInfo]
+  has_eos : Bool
+} derive(@debug.Debug)
+pub fn StreamIndex::num_batches(Self) -> Int
+pub fn StreamIndex::num_dictionaries(Self) -> Int
+pub fn StreamIndex::total_body_bytes(Self) -> Int64
 
 pub struct StreamReader {
   schema : Schema
@@ -101,6 +274,73 @@ pub struct StreamReader {
 }
 pub fn StreamReader::new(Bytes, limits? : ReadLimits) -> Self raise ArrowError
 pub fn StreamReader::next(Self) -> RecordBatch? raise ArrowError
+
+pub struct Table {
+  schema : Schema
+  // private fields
+}
+pub fn Table::append(Self, RecordBatch) -> Unit raise ArrowError
+pub fn Table::concat(Self, Self) -> Self raise ArrowError
+pub fn Table::drop_column(Self, Int) -> Self raise ArrowError
+pub fn Table::filter(Self, Array[Bool?]) -> Self raise ArrowError
+pub fn Table::filter_where(Self, Predicate) -> Self raise ArrowError
+pub fn Table::from_file(Bytes, limits? : ReadLimits) -> Self raise ArrowError
+pub fn Table::from_stream(Bytes, limits? : ReadLimits) -> Self raise ArrowError
+pub fn Table::get_batch(Self, Int) -> RecordBatch raise ArrowError
+pub fn Table::get_row(Self, Int) -> Array[Value?] raise ArrowError
+pub fn Table::head(Self, Int) -> Self raise ArrowError
+pub fn Table::is_empty(Self) -> Bool
+pub fn Table::new(Schema, Array[RecordBatch]) -> Self raise ArrowError
+pub fn Table::null_counts(Self) -> Array[Int]
+pub fn Table::num_batches(Self) -> Int
+pub fn Table::num_rows(Self) -> Int
+pub fn Table::partition_where(Self, Predicate) -> (Self, Self) raise ArrowError
+pub fn Table::project(Self, Array[Int]) -> Self raise ArrowError
+pub fn Table::rechunk(Self, Int) -> Self raise ArrowError
+pub fn Table::rename(Self, Int, String) -> Self raise ArrowError
+pub fn Table::select(Self, Array[String]) -> Self raise ArrowError
+pub fn Table::slice_rows(Self, Int, Int) -> Self raise ArrowError
+pub fn Table::summaries(Self) -> Array[ColumnSummary] raise ArrowError
+pub fn Table::tail(Self, Int) -> Self raise ArrowError
+pub fn Table::take_rows(Self, Array[Int]) -> Self raise ArrowError
+pub fn Table::to_file(Self) -> Bytes raise ArrowError
+pub fn Table::to_ipc_data(Self) -> IpcData raise ArrowError
+pub fn Table::to_stream(Self) -> Bytes raise ArrowError
+
+pub(all) enum TimeUnit {
+  Second
+  Millisecond
+  Microsecond
+  Nanosecond
+} derive(Eq, @debug.Debug)
+
+pub(all) enum Value {
+  BooleanValue(Bool)
+  Int8Value(Int)
+  Int16Value(Int)
+  Int32Value(Int)
+  Int64Value(Int64)
+  UInt8Value(Int)
+  UInt16Value(Int)
+  UInt32Value(UInt)
+  UInt64Value(UInt64)
+  Float32Value(Float)
+  Float64Value(Double)
+  Date32Value(Int)
+  Date64Value(Int64)
+  TimestampValue(Int64)
+  DurationValue(Int64)
+  Utf8Value(String)
+  BinaryValue(Bytes)
+  LargeUtf8Value(String)
+  LargeBinaryValue(Bytes)
+  FixedBinaryValue(Bytes)
+  ListValue(Array[Value?])
+  LargeListValue(Array[Value?])
+  FixedListValue(Array[Value?])
+  StructValue(Array[Value?])
+  MapValue(Array[(Value, Value?)])
+} derive(@debug.Debug)
 
 // Type aliases
 

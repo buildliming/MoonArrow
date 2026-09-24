@@ -1,0 +1,36 @@
+{
+  "target": "native",
+  "platform": "Windows-11-10.0.26200-SP0",
+  "machine": "AMD64",
+  "processor": "Intel64 Family 6 Model 186 Stepping 2, GenuineIntel",
+  "python": "3.13.9",
+  "moon": "moon 0.1.20260827 (d0aaa07 2026-08-27)\n\nFeature flags enabled: rr_moon_mod,rr_moon_pkg",
+  "command": [
+    "D:\\moon-build\\_build\\native\\debug\\build\\shunge\\arrow\\cmd\\bench\\bench.exe"
+  ],
+  "wall_seconds": 0.844,
+  "sampled_peak_rss_bytes": 29888512,
+  "rss_poll_interval_ms": 5,
+  "cases": [
+    {
+      "rows": 1000,
+      "iterations": 50,
+      "ipc_bytes": 25536,
+      "encode_ms": 26,
+      "decode_ms": 11,
+      "decoded_rows": 50000,
+      "encode_rows_per_s": 1923077,
+      "decode_rows_per_s": 4545455
+    },
+    {
+      "rows": 100000,
+      "iterations": 8,
+      "ipc_bytes": 2474112,
+      "encode_ms": 368,
+      "decode_ms": 166,
+      "decoded_rows": 800000,
+      "encode_rows_per_s": 2173913,
+      "decode_rows_per_s": 4819277
+    }
+  ]
+}

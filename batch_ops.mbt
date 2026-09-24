@@ -1,8 +1,12 @@
 ///|
 fn copy_field(field : Field) -> Field {
-  Field::new(field.name, field.data_type, nullable=field.nullable,
+  Field::new(
+    field.name,
+    field.data_type,
+    nullable=field.nullable,
     metadata=field.metadata.map(kv => kv),
-    children=field.children.map(child => copy_field(child)))
+    children=field.children.map(child => copy_field(child)),
+  )
 }
 
 ///|
@@ -21,8 +25,12 @@ fn[T] take_values(values : Array[T], indices : Array[Int]) -> Array[T] {
 ///|
 fn[T] append_values(left : Array[T], right : Array[T]) -> Array[T] {
   let result = []
-  for value in left { result.push(value) }
-  for value in right { result.push(value) }
+  for value in left {
+    result.push(value)
+  }
+  for value in right {
+    result.push(value)
+  }
   result
 }
 
@@ -43,39 +51,80 @@ fn Column::take_checked(self : Column, indices : Array[Int]) -> Column {
     Float64s(a) => Float64s(take_values(a, indices))
     Date32s(a) => Date32s(take_values(a, indices))
     Date64s(a) => Date64s(take_values(a, indices))
-    Timestamps(a, unit, timezone) => Timestamps(take_values(a, indices), unit, timezone)
+    Timestamps(a, unit, timezone) =>
+      Timestamps(take_values(a, indices), unit, timezone)
     Durations(a, unit) => Durations(take_values(a, indices), unit)
     Lists(offsets, validity, child) => {
       let child_indices = []
       let selected_offsets = [0]
       for index in indices {
-        for j in offsets[index]..<offsets[index + 1] { child_indices.push(j) }
+        for j in offsets[index]..<offsets[index + 1] {
+          child_indices.push(j)
+        }
         selected_offsets.push(child_indices.length())
       }
-      Lists(selected_offsets, take_values(validity, indices), child.take_checked(child_indices))
+      Lists(
+        selected_offsets,
+        take_values(validity, indices),
+        child.take_checked(child_indices),
+      )
     }
     LargeLists(offsets, validity, child) => {
       let child_indices = []
       let selected_offsets = [0]
       for index in indices {
-        for j in offsets[index]..<offsets[index + 1] { child_indices.push(j) }
+        for j in offsets[index]..<offsets[index + 1] {
+          child_indices.push(j)
+        }
         selected_offsets.push(child_indices.length())
       }
-      LargeLists(selected_offsets, take_values(validity, indices),
-        child.take_checked(child_indices))
+      LargeLists(
+        selected_offsets,
+        take_values(validity, indices),
+        child.take_checked(child_indices),
+      )
+    }
+    Maps(offsets, validity, child, sorted) => {
+      let child_indices = []
+      let selected_offsets = [0]
+      for index in indices {
+        for j in offsets[index]..<offsets[index + 1] {
+          child_indices.push(j)
+        }
+        selected_offsets.push(child_indices.length())
+      }
+      Maps(
+        selected_offsets,
+        take_values(validity, indices),
+        child.take_checked(child_indices),
+        sorted,
+      )
     }
     FixedLists(validity, child, size) => {
       let child_indices = []
       for index in indices {
-        for j in 0..<size { child_indices.push(index * size + j) }
+        for j in 0..<size {
+          child_indices.push(index * size + j)
+        }
       }
-      FixedLists(take_values(validity, indices), child.take_checked(child_indices), size)
+      FixedLists(
+        take_values(validity, indices),
+        child.take_checked(child_indices),
+        size,
+      )
     }
-    Structs(validity, children) => Structs(take_values(validity, indices),
-      children.map(child => child.take_checked(indices)))
-    Dictionaries(indices_array, values, id, ordered) => Dictionaries(
-      take_values(indices_array, indices),
-      values.take_checked(Array::makei(values.length(), i => i)), id, ordered)
+    Structs(validity, children) =>
+      Structs(
+        take_values(validity, indices),
+        children.map(child => child.take_checked(indices)),
+      )
+    Dictionaries(indices_array, values, id, ordered) =>
+      Dictionaries(
+        take_values(indices_array, indices),
+        values.take_checked(Array::makei(values.length(), i => i)),
+        id,
+        ordered,
+      )
     Strings(a) => Strings(take_values(a, indices))
     Binaries(a) => Binaries(take_values(a, indices))
     LargeStrings(a) => LargeStrings(take_values(a, indices))
@@ -85,7 +134,10 @@ fn Column::take_checked(self : Column, indices : Array[Int]) -> Column {
 }
 
 ///|
-fn Column::append_checked(self : Column, other : Column) -> Column raise ArrowError {
+fn Column::append_checked(
+  self : Column,
+  other : Column,
+) -> Column raise ArrowError {
   match (self, other) {
     (Nulls(a), Nulls(b)) => Nulls(a + b)
     (Booleans(a), Booleans(b)) => Booleans(append_values(a, b))
@@ -101,49 +153,87 @@ fn Column::append_checked(self : Column, other : Column) -> Column raise ArrowEr
     (Float64s(a), Float64s(b)) => Float64s(append_values(a, b))
     (Date32s(a), Date32s(b)) => Date32s(append_values(a, b))
     (Date64s(a), Date64s(b)) => Date64s(append_values(a, b))
-    (Timestamps(a, u, z), Timestamps(b, _, _)) => Timestamps(append_values(a, b), u, z)
+    (Timestamps(a, u, z), Timestamps(b, _, _)) =>
+      Timestamps(append_values(a, b), u, z)
     (Durations(a, u), Durations(b, _)) => Durations(append_values(a, b), u)
     (Lists(a, av, ac), Lists(b, bv, bc)) => {
-      let left = Lists(a, av, ac).take_checked(Array::makei(av.length(), i => i))
-      let right = Lists(b, bv, bc).take_checked(Array::makei(bv.length(), i => i))
+      let left = Lists(a, av, ac).take_checked(
+        Array::makei(av.length(), i => i),
+      )
+      let right = Lists(b, bv, bc).take_checked(
+        Array::makei(bv.length(), i => i),
+      )
       guard left is Lists(la, lv, lc) && right is Lists(rb, rv, rc) else {
         raise Invalid("internal List concat")
       }
       let offsets = la.map(x => x)
       let base = la[la.length() - 1]
-      for i in 1..<rb.length() { offsets.push(base + rb[i]) }
+      for i in 1..<rb.length() {
+        offsets.push(base + rb[i])
+      }
       Lists(offsets, append_values(lv, rv), lc.append_checked(rc))
     }
     (LargeLists(a, av, ac), LargeLists(b, bv, bc)) => {
-      let left = LargeLists(a, av, ac).take_checked(Array::makei(av.length(), i => i))
-      let right = LargeLists(b, bv, bc).take_checked(Array::makei(bv.length(), i => i))
+      let left = LargeLists(a, av, ac).take_checked(
+        Array::makei(av.length(), i => i),
+      )
+      let right = LargeLists(b, bv, bc).take_checked(
+        Array::makei(bv.length(), i => i),
+      )
       guard left is LargeLists(la, lv, lc) && right is LargeLists(rb, rv, rc) else {
         raise Invalid("internal LargeList concat")
       }
       let offsets = la.map(x => x)
       let base = la[la.length() - 1]
-      for i in 1..<rb.length() { offsets.push(base + rb[i]) }
+      for i in 1..<rb.length() {
+        offsets.push(base + rb[i])
+      }
       LargeLists(offsets, append_values(lv, rv), lc.append_checked(rc))
+    }
+    (Maps(a, av, ac, sorted), Maps(b, bv, bc, _)) => {
+      let left = Maps(a, av, ac, sorted).take_checked(
+        Array::makei(av.length(), i => i),
+      )
+      let right = Maps(b, bv, bc, sorted).take_checked(
+        Array::makei(bv.length(), i => i),
+      )
+      guard left is Maps(la, lv, lc, _) && right is Maps(rb, rv, rc, _) else {
+        raise Invalid("internal Map concat")
+      }
+      let offsets = la.map(x => x)
+      let base = la[la.length() - 1]
+      for i in 1..<rb.length() {
+        offsets.push(base + rb[i])
+      }
+      Maps(offsets, append_values(lv, rv), lc.append_checked(rc), sorted)
     }
     (FixedLists(av, ac, size), FixedLists(bv, bc, _)) =>
       FixedLists(append_values(av, bv), ac.append_checked(bc), size)
     (Structs(av, ac), Structs(bv, bc)) => {
       let children = []
-      for i in 0..<ac.length() { children.push(ac[i].append_checked(bc[i])) }
+      for i in 0..<ac.length() {
+        children.push(ac[i].append_checked(bc[i]))
+      }
       Structs(append_values(av, bv), children)
     }
-    (Dictionaries(a, av, id, ordered), Dictionaries(b, bv, _, _)) => {
+    (Dictionaries(a, av, id, ordered), Dictionaries(b, bv, _, _)) =>
       if dictionary_equal(av, bv) {
         Dictionaries(append_values(a, b), av, id, ordered)
       } else {
         let base = av.length()
-        let shifted = b.map(index => match index {
-          Some(i) => Some(i + base)
-          None => None
+        let shifted = b.map(index => {
+          match index {
+            Some(i) => Some(i + base)
+            None => None
+          }
         })
-        Dictionaries(append_values(a, shifted), av.append_checked(bv), id, ordered)
+        Dictionaries(
+          append_values(a, shifted),
+          av.append_checked(bv),
+          id,
+          ordered,
+        )
       }
-    }
     (Strings(a), Strings(b)) => Strings(append_values(a, b))
     (Binaries(a), Binaries(b)) => Binaries(append_values(a, b))
     (LargeStrings(a), LargeStrings(b)) => LargeStrings(append_values(a, b))
@@ -157,7 +247,10 @@ fn Column::append_checked(self : Column, other : Column) -> Column raise ArrowEr
 ///|
 /// Select fields by index. Duplicate indices are kept in the requested order.
 /// The result has fresh mutable column, field and metadata arrays.
-pub fn RecordBatch::project(self : RecordBatch, indices : Array[Int]) -> RecordBatch raise ArrowError {
+pub fn RecordBatch::project(
+  self : RecordBatch,
+  indices : Array[Int],
+) -> RecordBatch raise ArrowError {
   self.validate()
   let fields = []
   let columns = []
@@ -167,31 +260,48 @@ pub fn RecordBatch::project(self : RecordBatch, indices : Array[Int]) -> RecordB
     }
     let field = self.schema.fields[index]
     fields.push(copy_field(field))
-    columns.push(self.columns[index].take_checked(Array::makei(self.num_rows, i => i)))
+    columns.push(
+      self.columns[index].take_checked(Array::makei(self.num_rows, i => i)),
+    )
   }
-  RecordBatch::new(Schema::new(fields, metadata=self.schema.metadata.map(kv => kv)),
-    columns, num_rows=self.num_rows)
+  RecordBatch::new(
+    Schema::new(fields, metadata=self.schema.metadata.map(kv => kv)),
+    columns,
+    num_rows=self.num_rows,
+  )
 }
 
 ///|
 /// Take rows in arbitrary order. Repeated indices are preserved.
-pub fn RecordBatch::take(self : RecordBatch, indices : Array[Int]) -> RecordBatch raise ArrowError {
+pub fn RecordBatch::take(
+  self : RecordBatch,
+  indices : Array[Int],
+) -> RecordBatch raise ArrowError {
   self.validate()
   for index in indices {
     if index < 0 || index >= self.num_rows {
       raise Invalid("take row index out of range")
     }
   }
-  RecordBatch::new(copy_schema(self.schema),
+  RecordBatch::new(
+    copy_schema(self.schema),
     self.columns.map(column => column.take_checked(indices)),
-    num_rows=indices.length())
+    num_rows=indices.length(),
+  )
 }
 
 ///|
 /// Copy a contiguous range of rows. A zero-length slice at the end is valid.
-pub fn RecordBatch::slice(self : RecordBatch, start : Int, length : Int) -> RecordBatch raise ArrowError {
+pub fn RecordBatch::slice(
+  self : RecordBatch,
+  start : Int,
+  length : Int,
+) -> RecordBatch raise ArrowError {
   self.validate()
-  if start < 0 || length < 0 || start > self.num_rows || length > self.num_rows - start {
+  if start < 0 ||
+    length < 0 ||
+    start > self.num_rows ||
+    length > self.num_rows - start {
     raise Invalid("slice outside batch")
   }
   self.take(Array::makei(length, i => start + i))
@@ -199,27 +309,42 @@ pub fn RecordBatch::slice(self : RecordBatch, start : Int, length : Int) -> Reco
 
 ///|
 /// Keep rows whose mask is Some(true). None is treated as false.
-pub fn RecordBatch::filter(self : RecordBatch, mask : Array[Bool?]) -> RecordBatch raise ArrowError {
+pub fn RecordBatch::filter(
+  self : RecordBatch,
+  mask : Array[Bool?],
+) -> RecordBatch raise ArrowError {
   self.validate()
-  if mask.length() != self.num_rows { raise Invalid("filter mask length mismatch") }
+  if mask.length() != self.num_rows {
+    raise Invalid("filter mask length mismatch")
+  }
   let indices = []
   for i in 0..<mask.length() {
-    if mask[i] == Some(true) { indices.push(i) }
+    if mask[i] == Some(true) {
+      indices.push(i)
+    }
   }
   self.take(indices)
 }
 
 ///|
 /// Append batches with exactly equal schemas. The result owns new arrays.
-pub fn RecordBatch::concat(self : RecordBatch, others : Array[RecordBatch]) -> RecordBatch raise ArrowError {
+pub fn RecordBatch::concat(
+  self : RecordBatch,
+  others : Array[RecordBatch],
+) -> RecordBatch raise ArrowError {
   self.validate()
-  let columns = self.columns.map(column =>
-    column.take_checked(Array::makei(self.num_rows, i => i)))
+  let columns = self.columns.map(column => {
+    column.take_checked(Array::makei(self.num_rows, i => i))
+  })
   let mut rows = self.num_rows
   for batch in others {
     batch.validate()
-    if batch.schema != self.schema { raise Invalid("concat schema mismatch") }
-    if batch.num_rows > 0x7fffffff - rows { raise LimitExceeded("concat row count") }
+    if batch.schema != self.schema {
+      raise Invalid("concat schema mismatch")
+    }
+    if batch.num_rows > 0x7fffffff - rows {
+      raise LimitExceeded("concat row count")
+    }
     for i in 0..<columns.length() {
       columns[i] = columns[i].append_checked(batch.columns[i])
     }

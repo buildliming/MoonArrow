@@ -25,6 +25,7 @@ pub(all) enum Value {
   LargeListValue(Array[Value?])
   FixedListValue(Array[Value?])
   StructValue(Array[Value?])
+  MapValue(Array[(Value, Value?)])
 } derive(Debug)
 
 ///|
@@ -48,9 +49,11 @@ fn empty_column(field : Field) -> Column raise ArrowError {
     Duration(unit) => Durations([], unit)
     List => Lists([0], [], empty_column(field.children[0]))
     LargeList => LargeLists([0], [], empty_column(field.children[0]))
+    Map(sorted) => Maps([0], [], empty_column(field.children[0]), sorted)
     FixedSizeList(size) => FixedLists([], empty_column(field.children[0]), size)
     Struct => Structs([], field.children.map(child => empty_column(child)))
-    Dictionary(_, _, _) => raise Unsupported("row builder for dictionary fields")
+    Dictionary(_, _, _) =>
+      raise Unsupported("row builder for dictionary fields")
     Utf8 => Strings([])
     Binary => Binaries([])
     LargeUtf8 => LargeStrings([])
@@ -91,30 +94,61 @@ fn value_matches(field : Field, value : Value) -> Bool {
     (LargeBinary, LargeBinaryValue(_)) => true
     (FixedSizeBinary(width), FixedBinaryValue(value)) => value.length() == width
     (List, ListValue(values)) => {
-      if field.children.length() != 1 { return false }
+      if field.children.length() != 1 {
+        return false
+      }
       for value in values {
-        if !cell_matches(field.children[0], value) { return false }
+        if !cell_matches(field.children[0], value) {
+          return false
+        }
       }
       true
     }
     (LargeList, LargeListValue(values)) => {
-      if field.children.length() != 1 { return false }
+      if field.children.length() != 1 {
+        return false
+      }
       for value in values {
-        if !cell_matches(field.children[0], value) { return false }
+        if !cell_matches(field.children[0], value) {
+          return false
+        }
       }
       true
     }
     (FixedSizeList(size), FixedListValue(values)) => {
-      if field.children.length() != 1 || values.length() != size { return false }
+      if field.children.length() != 1 || values.length() != size {
+        return false
+      }
       for value in values {
-        if !cell_matches(field.children[0], value) { return false }
+        if !cell_matches(field.children[0], value) {
+          return false
+        }
       }
       true
     }
     (Struct, StructValue(values)) => {
-      if values.length() != field.children.length() { return false }
+      if values.length() != field.children.length() {
+        return false
+      }
       for i in 0..<values.length() {
-        if !cell_matches(field.children[i], values[i]) { return false }
+        if !cell_matches(field.children[i], values[i]) {
+          return false
+        }
+      }
+      true
+    }
+    (Map(_), MapValue(entries)) => {
+      if field.children.length() != 1 ||
+        field.children[0].children.length() != 2 {
+        return false
+      }
+      let key_field = field.children[0].children[0]
+      let value_field = field.children[0].children[1]
+      for pair in entries {
+        let (key, value) = pair
+        if !value_matches(key_field, key) || !cell_matches(value_field, value) {
+          return false
+        }
       }
       true
     }
@@ -145,13 +179,17 @@ fn default_cell(field : Field) -> Value? {
     Binary => Some(BinaryValue(b""))
     LargeUtf8 => Some(LargeUtf8Value(""))
     LargeBinary => Some(LargeBinaryValue(b""))
-    FixedSizeBinary(width) => Some(FixedBinaryValue(Bytes::from_array(
-      Array::make(width, b'\x00'))))
+    FixedSizeBinary(width) =>
+      Some(FixedBinaryValue(Bytes::from_array(Array::make(width, b'\x00'))))
     List => Some(ListValue([]))
     LargeList => Some(LargeListValue([]))
-    FixedSizeList(size) => Some(FixedListValue(Array::makei(size, _ =>
-      default_cell(field.children[0]))))
-    Struct => Some(StructValue(field.children.map(child => default_cell(child))))
+    Map(_) => Some(MapValue([]))
+    FixedSizeList(size) =>
+      Some(
+        FixedListValue(Array::makei(size, _ => default_cell(field.children[0]))),
+      )
+    Struct =>
+      Some(StructValue(field.children.map(child => default_cell(child))))
     Dictionary(_, _, _) => None
   }
 }
@@ -160,49 +198,171 @@ fn default_cell(field : Field) -> Value? {
 fn Column::push_value(self : Column, field : Field, value : Value?) -> Column {
   match (self, value) {
     (Nulls(n), _) => Nulls(n + 1)
-    (Booleans(a), Some(BooleanValue(v))) => { a.push(Some(v)); self }
-    (Booleans(a), None) => { a.push(None); self }
-    (Int8s(a), Some(Int8Value(v))) => { a.push(Some(v)); self }
-    (Int8s(a), None) => { a.push(None); self }
-    (Int16s(a), Some(Int16Value(v))) => { a.push(Some(v)); self }
-    (Int16s(a), None) => { a.push(None); self }
-    (Int32s(a), Some(Int32Value(v))) => { a.push(Some(v)); self }
-    (Int32s(a), None) => { a.push(None); self }
-    (Int64s(a), Some(Int64Value(v))) => { a.push(Some(v)); self }
-    (Int64s(a), None) => { a.push(None); self }
-    (UInt8s(a), Some(UInt8Value(v))) => { a.push(Some(v)); self }
-    (UInt8s(a), None) => { a.push(None); self }
-    (UInt16s(a), Some(UInt16Value(v))) => { a.push(Some(v)); self }
-    (UInt16s(a), None) => { a.push(None); self }
-    (UInt32s(a), Some(UInt32Value(v))) => { a.push(Some(v)); self }
-    (UInt32s(a), None) => { a.push(None); self }
-    (UInt64s(a), Some(UInt64Value(v))) => { a.push(Some(v)); self }
-    (UInt64s(a), None) => { a.push(None); self }
-    (Float32s(a), Some(Float32Value(v))) => { a.push(Some(v)); self }
-    (Float32s(a), None) => { a.push(None); self }
-    (Float64s(a), Some(Float64Value(v))) => { a.push(Some(v)); self }
-    (Float64s(a), None) => { a.push(None); self }
-    (Date32s(a), Some(Date32Value(v))) => { a.push(Some(v)); self }
-    (Date32s(a), None) => { a.push(None); self }
-    (Date64s(a), Some(Date64Value(v))) => { a.push(Some(v)); self }
-    (Date64s(a), None) => { a.push(None); self }
-    (Timestamps(a, _, _), Some(TimestampValue(v))) => { a.push(Some(v)); self }
-    (Timestamps(a, _, _), None) => { a.push(None); self }
-    (Durations(a, _), Some(DurationValue(v))) => { a.push(Some(v)); self }
-    (Durations(a, _), None) => { a.push(None); self }
-    (Strings(a), Some(Utf8Value(v))) => { a.push(Some(v)); self }
-    (Strings(a), None) => { a.push(None); self }
-    (Binaries(a), Some(BinaryValue(v))) => { a.push(Some(v)); self }
-    (Binaries(a), None) => { a.push(None); self }
-    (LargeStrings(a), Some(LargeUtf8Value(v))) => { a.push(Some(v)); self }
-    (LargeStrings(a), None) => { a.push(None); self }
-    (LargeBinaries(a), Some(LargeBinaryValue(v))) => { a.push(Some(v)); self }
-    (LargeBinaries(a), None) => { a.push(None); self }
-    (FixedBinaries(a, _), Some(FixedBinaryValue(v))) => { a.push(Some(v)); self }
-    (FixedBinaries(a, _), None) => { a.push(None); self }
+    (Booleans(a), Some(BooleanValue(v))) => {
+      a.push(Some(v))
+      self
+    }
+    (Booleans(a), None) => {
+      a.push(None)
+      self
+    }
+    (Int8s(a), Some(Int8Value(v))) => {
+      a.push(Some(v))
+      self
+    }
+    (Int8s(a), None) => {
+      a.push(None)
+      self
+    }
+    (Int16s(a), Some(Int16Value(v))) => {
+      a.push(Some(v))
+      self
+    }
+    (Int16s(a), None) => {
+      a.push(None)
+      self
+    }
+    (Int32s(a), Some(Int32Value(v))) => {
+      a.push(Some(v))
+      self
+    }
+    (Int32s(a), None) => {
+      a.push(None)
+      self
+    }
+    (Int64s(a), Some(Int64Value(v))) => {
+      a.push(Some(v))
+      self
+    }
+    (Int64s(a), None) => {
+      a.push(None)
+      self
+    }
+    (UInt8s(a), Some(UInt8Value(v))) => {
+      a.push(Some(v))
+      self
+    }
+    (UInt8s(a), None) => {
+      a.push(None)
+      self
+    }
+    (UInt16s(a), Some(UInt16Value(v))) => {
+      a.push(Some(v))
+      self
+    }
+    (UInt16s(a), None) => {
+      a.push(None)
+      self
+    }
+    (UInt32s(a), Some(UInt32Value(v))) => {
+      a.push(Some(v))
+      self
+    }
+    (UInt32s(a), None) => {
+      a.push(None)
+      self
+    }
+    (UInt64s(a), Some(UInt64Value(v))) => {
+      a.push(Some(v))
+      self
+    }
+    (UInt64s(a), None) => {
+      a.push(None)
+      self
+    }
+    (Float32s(a), Some(Float32Value(v))) => {
+      a.push(Some(v))
+      self
+    }
+    (Float32s(a), None) => {
+      a.push(None)
+      self
+    }
+    (Float64s(a), Some(Float64Value(v))) => {
+      a.push(Some(v))
+      self
+    }
+    (Float64s(a), None) => {
+      a.push(None)
+      self
+    }
+    (Date32s(a), Some(Date32Value(v))) => {
+      a.push(Some(v))
+      self
+    }
+    (Date32s(a), None) => {
+      a.push(None)
+      self
+    }
+    (Date64s(a), Some(Date64Value(v))) => {
+      a.push(Some(v))
+      self
+    }
+    (Date64s(a), None) => {
+      a.push(None)
+      self
+    }
+    (Timestamps(a, _, _), Some(TimestampValue(v))) => {
+      a.push(Some(v))
+      self
+    }
+    (Timestamps(a, _, _), None) => {
+      a.push(None)
+      self
+    }
+    (Durations(a, _), Some(DurationValue(v))) => {
+      a.push(Some(v))
+      self
+    }
+    (Durations(a, _), None) => {
+      a.push(None)
+      self
+    }
+    (Strings(a), Some(Utf8Value(v))) => {
+      a.push(Some(v))
+      self
+    }
+    (Strings(a), None) => {
+      a.push(None)
+      self
+    }
+    (Binaries(a), Some(BinaryValue(v))) => {
+      a.push(Some(v))
+      self
+    }
+    (Binaries(a), None) => {
+      a.push(None)
+      self
+    }
+    (LargeStrings(a), Some(LargeUtf8Value(v))) => {
+      a.push(Some(v))
+      self
+    }
+    (LargeStrings(a), None) => {
+      a.push(None)
+      self
+    }
+    (LargeBinaries(a), Some(LargeBinaryValue(v))) => {
+      a.push(Some(v))
+      self
+    }
+    (LargeBinaries(a), None) => {
+      a.push(None)
+      self
+    }
+    (FixedBinaries(a, _), Some(FixedBinaryValue(v))) => {
+      a.push(Some(v))
+      self
+    }
+    (FixedBinaries(a, _), None) => {
+      a.push(None)
+      self
+    }
     (Lists(offsets, validity, child), Some(ListValue(items))) => {
       let mut updated = child
-      for item in items { updated = updated.push_value(field.children[0], item) }
+      for item in items {
+        updated = updated.push_value(field.children[0], item)
+      }
       validity.push(true)
       offsets.push(updated.length())
       Lists(offsets, validity, updated)
@@ -214,7 +374,9 @@ fn Column::push_value(self : Column, field : Field, value : Value?) -> Column {
     }
     (LargeLists(offsets, validity, child), Some(LargeListValue(items))) => {
       let mut updated = child
-      for item in items { updated = updated.push_value(field.children[0], item) }
+      for item in items {
+        updated = updated.push_value(field.children[0], item)
+      }
       validity.push(true)
       offsets.push(updated.length())
       LargeLists(offsets, validity, updated)
@@ -224,16 +386,39 @@ fn Column::push_value(self : Column, field : Field, value : Value?) -> Column {
       offsets.push(offsets[offsets.length() - 1])
       self
     }
+    (Maps(offsets, validity, child, sorted), Some(MapValue(entries))) => {
+      let mut updated = child
+      for pair in entries {
+        let (key, value) = pair
+        updated = updated.push_value(
+          field.children[0],
+          Some(StructValue([Some(key), value])),
+        )
+      }
+      validity.push(true)
+      offsets.push(updated.length())
+      Maps(offsets, validity, updated, sorted)
+    }
+    (Maps(offsets, validity, _, _), None) => {
+      validity.push(false)
+      offsets.push(offsets[offsets.length() - 1])
+      self
+    }
     (FixedLists(validity, child, size), Some(FixedListValue(items))) => {
       let mut updated = child
-      for item in items { updated = updated.push_value(field.children[0], item) }
+      for item in items {
+        updated = updated.push_value(field.children[0], item)
+      }
       validity.push(true)
       FixedLists(validity, updated, size)
     }
     (FixedLists(validity, child, size), None) => {
       let mut updated = child
       for _ in 0..<size {
-        updated = updated.push_value(field.children[0], default_cell(field.children[0]))
+        updated = updated.push_value(
+          field.children[0],
+          default_cell(field.children[0]),
+        )
       }
       validity.push(false)
       FixedLists(validity, updated, size)
@@ -247,8 +432,10 @@ fn Column::push_value(self : Column, field : Field, value : Value?) -> Column {
     }
     (Structs(validity, children), None) => {
       for i in 0..<children.length() {
-        children[i] = children[i].push_value(field.children[i],
-          default_cell(field.children[i]))
+        children[i] = children[i].push_value(
+          field.children[i],
+          default_cell(field.children[i]),
+        )
       }
       validity.push(false)
       self
@@ -273,36 +460,53 @@ pub fn BatchBuilder::new(schema : Schema) -> BatchBuilder raise ArrowError {
 }
 
 ///|
-pub fn BatchBuilder::num_rows(self : BatchBuilder) -> Int { self.rows }
+pub fn BatchBuilder::num_rows(self : BatchBuilder) -> Int {
+  self.rows
+}
 
 ///|
 /// Append one complete row. A rejected row leaves this builder unchanged.
-pub fn BatchBuilder::append_row(self : BatchBuilder, values : Array[Value?]) -> Unit raise ArrowError {
+pub fn BatchBuilder::append_row(
+  self : BatchBuilder,
+  values : Array[Value?],
+) -> Unit raise ArrowError {
   if values.length() != self.schema.fields.length() {
     raise Invalid("builder row width differs from schema")
   }
-  if self.rows == 0x7fffffff { raise LimitExceeded("builder row count") }
+  if self.rows == 0x7fffffff {
+    raise LimitExceeded("builder row count")
+  }
   for i in 0..<values.length() {
     let field = self.schema.fields[i]
     match values[i] {
-      None => if !field.nullable {
-        raise Invalid("null in non-nullable field: " + field.name)
-      }
-      Some(value) => if !value_matches(field, value) {
-        raise Invalid("builder value type or range mismatch: " + field.name)
-      }
+      None =>
+        if !field.nullable {
+          raise Invalid("null in non-nullable field: " + field.name)
+        }
+      Some(value) =>
+        if !value_matches(field, value) {
+          raise Invalid("builder value type or range mismatch: " + field.name)
+        }
     }
   }
   for i in 0..<self.columns.length() {
-    self.columns[i] = self.columns[i].push_value(self.schema.fields[i], values[i])
+    self.columns[i] = self.columns[i].push_value(
+      self.schema.fields[i],
+      values[i],
+    )
   }
   self.rows += 1
 }
 
 ///|
 /// Return a snapshot. Later appends do not change previously finished batches.
-pub fn BatchBuilder::finish(self : BatchBuilder) -> RecordBatch raise ArrowError {
+pub fn BatchBuilder::finish(
+  self : BatchBuilder,
+) -> RecordBatch raise ArrowError {
   let indices = Array::makei(self.rows, i => i)
-  RecordBatch::new(copy_schema(self.schema),
-    self.columns.map(column => column.take_checked(indices)), num_rows=self.rows)
+  RecordBatch::new(
+    copy_schema(self.schema),
+    self.columns.map(column => column.take_checked(indices)),
+    num_rows=self.rows,
+  )
 }

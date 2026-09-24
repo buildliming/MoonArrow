@@ -9,15 +9,22 @@ pub struct Table {
 }
 
 ///|
-pub fn Table::new(schema : Schema, batches : Array[RecordBatch]) -> Table raise ArrowError {
+pub fn Table::new(
+  schema : Schema,
+  batches : Array[RecordBatch],
+) -> Table raise ArrowError {
   validate_schema(schema)
   let owned_schema = copy_schema(schema)
   let owned_batches = []
   let mut rows = 0
   for batch in batches {
     batch.validate()
-    if batch.schema != schema { raise Invalid("table batch schema mismatch") }
-    if batch.num_rows > 0x7fffffff - rows { raise LimitExceeded("table row count") }
+    if batch.schema != schema {
+      raise Invalid("table batch schema mismatch")
+    }
+    if batch.num_rows > 0x7fffffff - rows {
+      raise LimitExceeded("table row count")
+    }
     rows += batch.num_rows
     owned_batches.push(batch.take(Array::makei(batch.num_rows, i => i)))
   }
@@ -25,25 +32,59 @@ pub fn Table::new(schema : Schema, batches : Array[RecordBatch]) -> Table raise 
 }
 
 ///|
-pub fn Table::from_stream(bytes : Bytes, limits? : ReadLimits = ReadLimits::default()) -> Table raise ArrowError {
+pub fn Table::from_stream(
+  bytes : Bytes,
+  limits? : ReadLimits = ReadLimits::default(),
+) -> Table raise ArrowError {
   let data = read_stream(bytes, limits~)
   Table::new(data.schema, data.batches)
 }
 
 ///|
-pub fn Table::from_file(bytes : Bytes, limits? : ReadLimits = ReadLimits::default()) -> Table raise ArrowError {
+pub fn Table::from_file(
+  bytes : Bytes,
+  limits? : ReadLimits = ReadLimits::default(),
+) -> Table raise ArrowError {
   let data = read_file(bytes, limits~)
   Table::new(data.schema, data.batches)
 }
 
 ///|
-pub fn Table::num_rows(self : Table) -> Int { self.row_count }
+/// Convert a materialized IPC result into an owned Table.
+pub fn IpcData::to_table(self : IpcData) -> Table raise ArrowError {
+  Table::new(self.schema, self.batches)
+}
 
 ///|
-pub fn Table::num_batches(self : Table) -> Int { self.batches.length() }
+/// Return independent batch snapshots for callers using the original IPC API.
+pub fn Table::to_ipc_data(self : Table) -> IpcData raise ArrowError {
+  let batches = []
+  for i in 0..<self.num_batches() {
+    batches.push(self.get_batch(i))
+  }
+  IpcData::{ schema: copy_schema(self.schema), batches, }
+}
 
 ///|
-pub fn Table::get_batch(self : Table, index : Int) -> RecordBatch raise ArrowError {
+pub fn Table::num_rows(self : Table) -> Int {
+  self.row_count
+}
+
+///|
+pub fn Table::is_empty(self : Table) -> Bool {
+  self.row_count == 0
+}
+
+///|
+pub fn Table::num_batches(self : Table) -> Int {
+  self.batches.length()
+}
+
+///|
+pub fn Table::get_batch(
+  self : Table,
+  index : Int,
+) -> RecordBatch raise ArrowError {
   if index < 0 || index >= self.batches.length() {
     raise Invalid("table batch index out of range")
   }
@@ -54,9 +95,14 @@ pub fn Table::get_batch(self : Table, index : Int) -> RecordBatch raise ArrowErr
 ///|
 /// Append one batch after validating the whole batch. The stored rows are
 /// detached from the caller's mutable arrays.
-pub fn Table::append(self : Table, batch : RecordBatch) -> Unit raise ArrowError {
+pub fn Table::append(
+  self : Table,
+  batch : RecordBatch,
+) -> Unit raise ArrowError {
   batch.validate()
-  if batch.schema != self.schema { raise Invalid("table batch schema mismatch") }
+  if batch.schema != self.schema {
+    raise Invalid("table batch schema mismatch")
+  }
   if batch.num_rows > 0x7fffffff - self.row_count {
     raise LimitExceeded("table row count")
   }
@@ -67,7 +113,10 @@ pub fn Table::append(self : Table, batch : RecordBatch) -> Unit raise ArrowError
 
 ///|
 /// Select columns in every batch, preserving batch boundaries and metadata.
-pub fn Table::project(self : Table, indices : Array[Int]) -> Table raise ArrowError {
+pub fn Table::project(
+  self : Table,
+  indices : Array[Int],
+) -> Table raise ArrowError {
   if self.batches.is_empty() {
     let fields = []
     for index in indices {
@@ -76,8 +125,10 @@ pub fn Table::project(self : Table, indices : Array[Int]) -> Table raise ArrowEr
       }
       fields.push(copy_field(self.schema.fields[index]))
     }
-    return Table::new(Schema::new(fields,
-      metadata=self.schema.metadata.map(kv => kv)), [])
+    return Table::new(
+      Schema::new(fields, metadata=self.schema.metadata.map(kv => kv)),
+      [],
+    )
   }
   let projected = self.batches.map(batch => batch.project(indices))
   Table::new(projected[0].schema, projected)
@@ -85,8 +136,14 @@ pub fn Table::project(self : Table, indices : Array[Int]) -> Table raise ArrowEr
 
 ///|
 /// Return a range of global table rows. A range may cross batch boundaries.
-pub fn Table::slice_rows(self : Table, start : Int, length : Int) -> Table raise ArrowError {
-  if start < 0 || length < 0 || start > self.row_count ||
+pub fn Table::slice_rows(
+  self : Table,
+  start : Int,
+  length : Int,
+) -> Table raise ArrowError {
+  if start < 0 ||
+    length < 0 ||
+    start > self.row_count ||
     length > self.row_count - start {
     raise Invalid("table slice outside rows")
   }
@@ -107,8 +164,13 @@ pub fn Table::slice_rows(self : Table, start : Int, length : Int) -> Table raise
 
 ///|
 /// Apply one nullable row mask over all batches. Null mask entries are false.
-pub fn Table::filter(self : Table, mask : Array[Bool?]) -> Table raise ArrowError {
-  if mask.length() != self.row_count { raise Invalid("table mask length mismatch") }
+pub fn Table::filter(
+  self : Table,
+  mask : Array[Bool?],
+) -> Table raise ArrowError {
+  if mask.length() != self.row_count {
+    raise Invalid("table mask length mismatch")
+  }
   let result = []
   let mut position = 0
   for batch in self.batches {
@@ -122,7 +184,9 @@ pub fn Table::filter(self : Table, mask : Array[Bool?]) -> Table raise ArrowErro
 ///|
 /// Concatenate tables with exactly equal schemas and retain batch boundaries.
 pub fn Table::concat(self : Table, other : Table) -> Table raise ArrowError {
-  if self.schema != other.schema { raise Invalid("table schema mismatch") }
+  if self.schema != other.schema {
+    raise Invalid("table schema mismatch")
+  }
   if other.row_count > 0x7fffffff - self.row_count {
     raise LimitExceeded("table row count")
   }
@@ -133,7 +197,9 @@ pub fn Table::concat(self : Table, other : Table) -> Table raise ArrowError {
 /// Rechunk batches to at most max_rows rows. This is useful for controlling
 /// downstream IPC message size, especially when source batches are uneven.
 pub fn Table::rechunk(self : Table, max_rows : Int) -> Table raise ArrowError {
-  if max_rows <= 0 { raise Invalid("max_rows must be positive") }
+  if max_rows <= 0 {
+    raise Invalid("max_rows must be positive")
+  }
   let result = []
   let mut pending : RecordBatch? = None
   for batch in self.batches {
@@ -160,7 +226,9 @@ pub fn Table::rechunk(self : Table, max_rows : Int) -> Table raise ArrowError {
       }
     }
   }
-  if pending is Some(last) { result.push(last) }
+  if pending is Some(last) {
+    result.push(last)
+  }
   Table::new(self.schema, result)
 }
 

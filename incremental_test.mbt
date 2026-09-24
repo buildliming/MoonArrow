@@ -37,7 +37,12 @@ test "incremental writer emits independently consumable chunks" {
   assert_eq(reader.push(eos).length(), 0)
   reader.finish()
   assert_eq(reader.num_batches(), 2)
-  let failed = try { ignore(writer.write_batch(first)); false } catch { _ => true }
+  let failed = try {
+    ignore(writer.write_batch(first))
+    false
+  } catch {
+    _ => true
+  }
   assert_true(failed)
 }
 
@@ -47,9 +52,19 @@ test "incremental decoder rejects a truncated frame at final EOF" {
   let bytes = @arrow.write_stream(schema, [])
   let reader = @arrow.IncrementalReader::new()
   ignore(reader.push(bytes.view(end=bytes.length() - 1).to_owned()))
-  let failed = try { reader.finish(); false } catch { _ => true }
+  let failed = try {
+    reader.finish()
+    false
+  } catch {
+    _ => true
+  }
   assert_true(failed)
-  let failed = try { ignore(reader.push(b"x")); false } catch { _ => true }
+  let failed = try {
+    ignore(reader.push(b"x"))
+    false
+  } catch {
+    _ => true
+  }
   assert_true(failed)
 }
 
@@ -59,8 +74,10 @@ test "incremental file writer produces indexed multi-batch file" {
   let first = @arrow.RecordBatch::new(schema, [Strings([Some("a"), None])])
   let second = @arrow.RecordBatch::new(schema, [Strings([Some("b")])])
   let writer = @arrow.FileWriter::new(schema)
-  let bytes = writer.start() + writer.write_batch(first) +
-    writer.write_batch(second) + writer.finish()
+  let bytes = writer.start() +
+    writer.write_batch(first) +
+    writer.write_batch(second) +
+    writer.finish()
   let reader = @arrow.FileReader::new(bytes)
   assert_eq(reader.num_batches(), 2)
   assert_true(reader.get_batch(1).columns[0] is Strings([Some("b")]))

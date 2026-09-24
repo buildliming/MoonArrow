@@ -3,6 +3,8 @@
 Use a MoonBit toolchain supporting `moon.mod` and `moon.pkg`. The initial local
 validation used moon 0.1.20260803; run `moon version --all` when reporting an issue.
 Python and PyArrow are test-only dependencies. Node.js is needed for JS execution.
+The repository is a two-member `moon.work` workspace: the library and an
+independent consumer using its public API. Run commands from the workspace root.
 
 ```sh
 moon check --target all --deny-warn
@@ -10,8 +12,12 @@ moon test --target all
 python -m pip install -r tools/requirements-interop.txt
 python tools/interop.py --target native
 python tools/interop.py --target js
+python tools/workflow.py --target native
+moon run examples/consumer --target native
+python tools/count_core.py --min-effective 4001
 moon info
 moon fmt
+moon fmt --check
 git diff --check
 ```
 
@@ -26,8 +32,15 @@ The root package contains production code. `cmd/main` is the small runnable demo
 `malformed_wbtest.mbt` exercises malformed internal layouts. `tools/interop.py`
 creates deterministic PyArrow cases and checks both decoding and re-encoding.
 `--fixtures-dir PATH` optionally saves input fixtures under a local output path.
+`tools/workflow.py` creates two real `.arrow` file examples, but its CLI sends
+small file contents as hex arguments. `tools/bench.py` requires
+`tools/requirements-bench.txt`, reports debug-build Native/JS codec timing and
+sampled RSS, and should run outside normal CI. `tools/count_core.py` excludes
+tests, commands, examples and generated code; the CI threshold is 4001
+nonblank/non-`//` production lines.
 
 Before publishing, review module ownership/name, generated public interfaces,
 README support claims, test results and the license. Use `moon publish --dry-run`
-to validate the packaged source before `moon publish`. Registry publication and
+from the **library member** to validate packaged source before `moon publish`.
+Registry publication and
 contest submission are separate actions; CI passing does not perform either.

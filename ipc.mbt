@@ -35,7 +35,11 @@ pub fn write_stream(
 ) -> Bytes raise ArrowError {
   validate_batches(schema, batches)
   let out : Array[Byte] = []
-  write_frame(out, schema_message(schema, replacement=schema_has_dictionary(schema)), b"")
+  write_frame(
+    out,
+    schema_message(schema, replacement=schema_has_dictionary(schema)),
+    b"",
+  )
   let dictionaries : Array[DictionaryEntry] = []
   for batch in batches {
     emit_dictionary_updates(out, schema, batch, dictionaries, true)
@@ -74,8 +78,16 @@ pub fn StreamReader::new(
     raise Invalid("stream must start with a schema")
   }
   let schema = decode_schema(frame.metadata, frame.header, limits)
-  { schema, data, limits, offset: frame.next, count: 0, finished: false,
-    dictionaries: [], dictionary_messages: 0, }
+  {
+    schema,
+    data,
+    limits,
+    offset: frame.next,
+    count: 0,
+    finished: false,
+    dictionaries: [],
+    dictionary_messages: 0,
+  }
 }
 
 ///|
@@ -86,7 +98,8 @@ pub fn StreamReader::next(self : StreamReader) -> RecordBatch? raise ArrowError 
   }
   self.finished = true
   while true {
-    let frame = match read_frame(self.data, self.offset, self.data.length(), self.limits) {
+    let frame = match
+      read_frame(self.data, self.offset, self.data.length(), self.limits) {
       None => return None
       Some(frame) => frame
     }
@@ -95,11 +108,19 @@ pub fn StreamReader::next(self : StreamReader) -> RecordBatch? raise ArrowError 
       if self.dictionary_messages >= self.limits.max_dictionary_messages {
         raise LimitExceeded("dictionary message count")
       }
-      decode_dictionary_frame(frame, self.schema, self.dictionaries, self.limits, true)
+      decode_dictionary_frame(
+        frame,
+        self.schema,
+        self.dictionaries,
+        self.limits,
+        true,
+      )
       self.dictionary_messages += 1
       continue
     }
-    if self.count >= self.limits.max_batches { raise LimitExceeded("batch count") }
+    if self.count >= self.limits.max_batches {
+      raise LimitExceeded("batch count")
+    }
     let result = decode_body(frame, self.schema, self.limits, self.dictionaries)
     self.count += 1
     self.finished = false
@@ -130,7 +151,11 @@ priv struct FileBlock {
 }
 
 ///|
-fn encode_footer(schema : Schema, blocks : Array[FileBlock], dictionaries : Array[FileBlock]) -> Bytes {
+fn encode_footer(
+  schema : Schema,
+  blocks : Array[FileBlock],
+  dictionaries : Array[FileBlock],
+) -> Bytes {
   let out : Array[Byte] = [b'\x00', b'\x00', b'\x00', b'\x00']
   let footer = fb_table(out, 4)
   put_i32(out, 0, footer.pos)
@@ -190,7 +215,8 @@ pub fn write_file(
           let layout = dictionary_layout(values)
           let metadata = dictionary_message(id, values.length(), layout, false)
           dictionary_blocks.push(FileBlock::{
-            offset: out.length(), metadata_size: 8 + metadata.length(),
+            offset: out.length(),
+            metadata_size: 8 + metadata.length(),
             body_size: layout.body.length(),
           })
           write_frame(out, metadata, layout.body)
@@ -233,17 +259,28 @@ fn file_blocks(
   limits : ReadLimits,
   footer_start : Int,
 ) -> Array[FileBlock] raise ArrowError {
-  let limit = if slot == 2 { limits.max_dictionary_messages } else { limits.max_batches }
+  let limit = if slot == 2 {
+    limits.max_dictionary_messages
+  } else {
+    limits.max_batches
+  }
   let (p, count) = vector_info(footer, root, slot, 24, limit)
   let blocks = []
   let mut previous = -1
   for i in 0..<count {
-    let offset = bounded_i64(read_i64(footer, p + i * 24),
-      footer_start, "file block offset")
+    let offset = bounded_i64(
+      read_i64(footer, p + i * 24),
+      footer_start,
+      "file block offset",
+    )
     let metadata_size = read_i32(footer, p + i * 24 + 8)
-    let body_size = bounded_i64(read_i64(footer, p + i * 24 + 16),
-      limits.max_body_bytes, "file block body size")
-    if offset <= previous || metadata_size < 4 ||
+    let body_size = bounded_i64(
+      read_i64(footer, p + i * 24 + 16),
+      limits.max_body_bytes,
+      "file block body size",
+    )
+    if offset <= previous ||
+      metadata_size < 4 ||
       metadata_size > footer_start - offset ||
       body_size > footer_start - offset - metadata_size {
       raise Invalid("invalid file block")
@@ -284,7 +321,9 @@ pub fn FileReader::new(
   }
   let schema = decode_schema(footer, required_ref(footer, root, 1), limits)
   let (_, custom) = vector_info(footer, root, 4, 4, limits.max_fields)
-  if custom != 0 { raise Unsupported("footer custom metadata") }
+  if custom != 0 {
+    raise Unsupported("footer custom metadata")
+  }
   let first = match read_frame(data, 8, footer_start, limits) {
     Some(frame) => frame
     None => raise Invalid("missing file schema message")
@@ -300,26 +339,37 @@ pub fn FileReader::new(
   let mut offset = first.next
   let mut batch_index = 0
   let mut dictionary_index = 0
-  while batch_index < blocks.length() || dictionary_index < dictionary_blocks.length() {
+  while batch_index < blocks.length() ||
+        dictionary_index < dictionary_blocks.length() {
     let is_dictionary = dictionary_index < dictionary_blocks.length() &&
       dictionary_blocks[dictionary_index].offset == offset
-    let is_batch = batch_index < blocks.length() && blocks[batch_index].offset == offset
-    if is_dictionary == is_batch { raise Invalid("missing, overlapping or unindexed file block") }
-    let block = if is_dictionary { dictionary_blocks[dictionary_index] } else { blocks[batch_index] }
+    let is_batch = batch_index < blocks.length() &&
+      blocks[batch_index].offset == offset
+    if is_dictionary == is_batch {
+      raise Invalid("missing, overlapping or unindexed file block")
+    }
+    let block = if is_dictionary {
+      dictionary_blocks[dictionary_index]
+    } else {
+      blocks[batch_index]
+    }
     let end = offset + block.metadata_size + block.body_size
     let frame = match read_frame(data, offset, end, limits) {
       Some(frame) => frame
       None => raise Invalid("file block points to EOS")
     }
     if frame.metadata_size != block.metadata_size ||
-      frame.body.length() != block.body_size || frame.next != end {
+      frame.body.length() != block.body_size ||
+      frame.next != end {
       raise Invalid("footer block lengths differ from message")
     }
     if is_dictionary {
       decode_dictionary_frame(frame, schema, state, limits, false)
       dictionary_index += 1
     } else {
-      if frame.kind != 3 { raise Invalid("file record block is not a batch") }
+      if frame.kind != 3 {
+        raise Invalid("file record block is not a batch")
+      }
       snapshots.push(state.map(entry => entry))
       batch_index += 1
     }
@@ -334,6 +384,11 @@ pub fn FileReader::new(
 ///|
 pub fn FileReader::num_batches(self : FileReader) -> Int {
   self.blocks.length()
+}
+
+///|
+pub fn FileReader::is_empty(self : FileReader) -> Bool {
+  self.blocks.is_empty()
 }
 
 ///|

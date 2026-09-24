@@ -37,94 +37,115 @@ fn decode_metadata(
 
 ///|
 fn encode_field(out : Array[Byte], field : Field) -> Int {
-    let f = fb_table(out, 7)
-    fb_ref(out, f, 0, fb_string(out, field.name))
-    fb_int(out, f, 1, if field.nullable { 1 } else { 0 })
-    let value_type = match field.data_type {
-      Dictionary(_, inner, _) => inner
-      other => other
-    }
-    let (tag, width, signed) = match value_type {
-      Null => (1, 0, 0)
-      Int8 => (2, 8, 1)
-      Int16 => (2, 16, 1)
-      Int32 => (2, 32, 1)
-      Int64 => (2, 64, 1)
-      UInt8 => (2, 8, 0)
-      UInt16 => (2, 16, 0)
-      UInt32 => (2, 32, 0)
-      UInt64 => (2, 64, 0)
-      Float32 => (3, 1, 0)
-      Float64 => (3, 2, 0)
-      Date32 => (8, 0, 0)
-      Date64 => (8, 1, 0)
-      Timestamp(_, _) => (10, 0, 0)
-      Duration(_) => (18, 0, 0)
-      List => (12, 0, 0)
-      LargeList => (21, 0, 0)
-      FixedSizeList(size) => (16, size, 0)
-      Struct => (13, 0, 0)
-      Dictionary(_, _, _) => (0, 0, 0)
-      Binary => (4, 0, 0)
-      Utf8 => (5, 0, 0)
-      LargeBinary => (19, 0, 0)
-      LargeUtf8 => (20, 0, 0)
-      FixedSizeBinary(width) => (15, width, 0)
-      Boolean => (6, 0, 0)
-    }
-    fb_int(out, f, 2, tag)
-    let t = fb_table(out, if tag == 2 || tag == 10 { 2 } else if tag == 3 || tag == 8 || tag == 18 || tag == 15 || tag == 16 { 1 } else { 0 })
-    fb_ref(out, f, 3, t.pos)
-    if tag == 2 {
-      fb_int(out, t, 0, width)
-      fb_int(out, t, 1, signed)
-    } else if tag == 3 {
-      fb_int(out, t, 0, width)
-    } else if tag == 8 {
-      fb_int(out, t, 0, width)
-    } else if tag == 10 {
-      if value_type is Timestamp(unit, timezone) {
-        fb_int(out, t, 0, time_unit_code(unit))
-        if timezone is Some(name) {
-          fb_ref(out, t, 1, fb_string(out, name))
-        }
-      }
-    } else if tag == 18 {
-      if value_type is Duration(unit) {
-        fb_int(out, t, 0, time_unit_code(unit))
-      }
-    } else if tag == 15 {
-      fb_int(out, t, 0, width)
-    } else if tag == 16 {
-      fb_int(out, t, 0, width)
-    }
-    if field.data_type is Dictionary(id, _, ordered) {
-      let dictionary = fb_table(out, 4)
-      fb_ref(out, f, 4, dictionary.pos)
-      fb_long(out, dictionary, 0, id)
-      let index_type = fb_table(out, 2)
-      fb_ref(out, dictionary, 1, index_type.pos)
-      fb_int(out, index_type, 0, 32)
-      fb_int(out, index_type, 1, 1)
-      fb_int(out, dictionary, 2, if ordered { 1 } else { 0 })
-    }
-    if !field.metadata.is_empty() {
-      fb_ref(out, f, 6, encode_metadata(out, field.metadata))
-    }
-    if !field.children.is_empty() {
-      let children = fb_vector(out, field.children.length(), 4, 4)
-      fb_ref(out, f, 5, children)
-      for i in 0..<field.children.length() {
-        let pointer = children + 4 + i * 4
-        let child = encode_field(out, field.children[i])
-        put_i32(out, pointer, child - pointer)
+  let f = fb_table(out, 7)
+  fb_ref(out, f, 0, fb_string(out, field.name))
+  fb_int(out, f, 1, if field.nullable { 1 } else { 0 })
+  let value_type = match field.data_type {
+    Dictionary(_, inner, _) => inner
+    other => other
+  }
+  let (tag, width, signed) = match value_type {
+    Null => (1, 0, 0)
+    Int8 => (2, 8, 1)
+    Int16 => (2, 16, 1)
+    Int32 => (2, 32, 1)
+    Int64 => (2, 64, 1)
+    UInt8 => (2, 8, 0)
+    UInt16 => (2, 16, 0)
+    UInt32 => (2, 32, 0)
+    UInt64 => (2, 64, 0)
+    Float32 => (3, 1, 0)
+    Float64 => (3, 2, 0)
+    Date32 => (8, 0, 0)
+    Date64 => (8, 1, 0)
+    Timestamp(_, _) => (10, 0, 0)
+    Duration(_) => (18, 0, 0)
+    List => (12, 0, 0)
+    LargeList => (21, 0, 0)
+    FixedSizeList(size) => (16, size, 0)
+    Map(sorted) => (17, if sorted { 1 } else { 0 }, 0)
+    Struct => (13, 0, 0)
+    Dictionary(_, _, _) => (0, 0, 0)
+    Binary => (4, 0, 0)
+    Utf8 => (5, 0, 0)
+    LargeBinary => (19, 0, 0)
+    LargeUtf8 => (20, 0, 0)
+    FixedSizeBinary(width) => (15, width, 0)
+    Boolean => (6, 0, 0)
+  }
+  fb_int(out, f, 2, tag)
+  let t = fb_table(
+    out,
+    if tag == 2 || tag == 10 {
+      2
+    } else if tag == 3 ||
+      tag == 8 ||
+      tag == 18 ||
+      tag == 15 ||
+      tag == 16 ||
+      tag == 17 {
+      1
+    } else {
+      0
+    },
+  )
+  fb_ref(out, f, 3, t.pos)
+  if tag == 2 {
+    fb_int(out, t, 0, width)
+    fb_int(out, t, 1, signed)
+  } else if tag == 3 {
+    fb_int(out, t, 0, width)
+  } else if tag == 8 {
+    fb_int(out, t, 0, width)
+  } else if tag == 10 {
+    if value_type is Timestamp(unit, timezone) {
+      fb_int(out, t, 0, time_unit_code(unit))
+      if timezone is Some(name) {
+        fb_ref(out, t, 1, fb_string(out, name))
       }
     }
-    f.pos
+  } else if tag == 18 {
+    if value_type is Duration(unit) {
+      fb_int(out, t, 0, time_unit_code(unit))
+    }
+  } else if tag == 15 {
+    fb_int(out, t, 0, width)
+  } else if tag == 16 {
+    fb_int(out, t, 0, width)
+  } else if tag == 17 {
+    fb_int(out, t, 0, width)
+  }
+  if field.data_type is Dictionary(id, _, ordered) {
+    let dictionary = fb_table(out, 4)
+    fb_ref(out, f, 4, dictionary.pos)
+    fb_long(out, dictionary, 0, id)
+    let index_type = fb_table(out, 2)
+    fb_ref(out, dictionary, 1, index_type.pos)
+    fb_int(out, index_type, 0, 32)
+    fb_int(out, index_type, 1, 1)
+    fb_int(out, dictionary, 2, if ordered { 1 } else { 0 })
+  }
+  if !field.metadata.is_empty() {
+    fb_ref(out, f, 6, encode_metadata(out, field.metadata))
+  }
+  if !field.children.is_empty() {
+    let children = fb_vector(out, field.children.length(), 4, 4)
+    fb_ref(out, f, 5, children)
+    for i in 0..<field.children.length() {
+      let pointer = children + 4 + i * 4
+      let child = encode_field(out, field.children[i])
+      put_i32(out, pointer, child - pointer)
+    }
+  }
+  f.pos
 }
 
 ///|
-fn encode_schema(out : Array[Byte], schema : Schema, replacement? : Bool = false) -> Int {
+fn encode_schema(
+  out : Array[Byte],
+  schema : Schema,
+  replacement? : Bool = false,
+) -> Int {
   let table = fb_table(out, 4)
   let fields = fb_vector(out, schema.fields.length(), 4, 4)
   fb_ref(out, table, 1, fields)
@@ -145,117 +166,151 @@ fn encode_schema(out : Array[Byte], schema : Schema, replacement? : Bool = false
 }
 
 ///|
-fn decode_field(data : Bytes, f : Int, limits : ReadLimits, depth : Int) -> (Field, Int) raise ArrowError {
-    if depth > limits.max_depth { raise LimitExceeded("nested field depth") }
-    let name = match field_ref(data, f, 0) {
-      None => ""
-      Some(s) => read_string(data, s)
-    }
-    let nullable = field_int(data, f, 1, 1, 0)
-    if nullable > 1 {
-      raise Invalid("invalid nullable flag")
-    }
-    let tag = field_int(data, f, 2, 1, 0)
-    let t = required_ref(data, f, 3)
-    // Validate even an empty type table before using its tag.
-    ignore(table_field(data, t, 0, 1))
-    let value_type = match tag {
-      1 => DataType::Null
-      2 => {
-        let signed = field_int(data, t, 1, 1, 0)
-        if signed > 1 { raise Invalid("invalid integer signedness") }
-        match (field_int(data, t, 0, 4, 0), signed) {
-          (8, 1) => Int8
-          (16, 1) => Int16
-          (32, 1) => Int32
-          (64, 1) => Int64
-          (8, 0) => UInt8
-          (16, 0) => UInt16
-          (32, 0) => UInt32
-          (64, 0) => UInt64
-          _ => raise Unsupported("integer width")
-        }
+fn decode_field(
+  data : Bytes,
+  f : Int,
+  limits : ReadLimits,
+  depth : Int,
+) -> (Field, Int) raise ArrowError {
+  if depth > limits.max_depth {
+    raise LimitExceeded("nested field depth")
+  }
+  let name = match field_ref(data, f, 0) {
+    None => ""
+    Some(s) => read_string(data, s)
+  }
+  let nullable = field_int(data, f, 1, 1, 0)
+  if nullable > 1 {
+    raise Invalid("invalid nullable flag")
+  }
+  let tag = field_int(data, f, 2, 1, 0)
+  let t = required_ref(data, f, 3)
+  // Validate even an empty type table before using its tag.
+  ignore(table_field(data, t, 0, 1))
+  let value_type = match tag {
+    1 => DataType::Null
+    2 => {
+      let signed = field_int(data, t, 1, 1, 0)
+      if signed > 1 {
+        raise Invalid("invalid integer signedness")
       }
-      3 => match field_int(data, t, 0, 2, 0) {
+      match (field_int(data, t, 0, 4, 0), signed) {
+        (8, 1) => Int8
+        (16, 1) => Int16
+        (32, 1) => Int32
+        (64, 1) => Int64
+        (8, 0) => UInt8
+        (16, 0) => UInt16
+        (32, 0) => UInt32
+        (64, 0) => UInt64
+        _ => raise Unsupported("integer width")
+      }
+    }
+    3 =>
+      match field_int(data, t, 0, 2, 0) {
         1 => Float32
         2 => Float64
         _ => raise Unsupported("floating-point precision")
-        }
-      4 => Binary
-      5 => Utf8
-      6 => Boolean
-      15 => {
-        let width = field_int(data, t, 0, 4, 0)
-        if width <= 0 { raise Invalid("fixed binary width must be positive") }
-        FixedSizeBinary(width)
       }
-      16 => {
-        let size = field_int(data, t, 0, 4, 0)
-        if size <= 0 { raise Invalid("FixedSizeList size must be positive") }
-        FixedSizeList(size)
+    4 => Binary
+    5 => Utf8
+    6 => Boolean
+    15 => {
+      let width = field_int(data, t, 0, 4, 0)
+      if width <= 0 {
+        raise Invalid("fixed binary width must be positive")
       }
-      19 => LargeBinary
-      20 => LargeUtf8
-      8 => match field_int(data, t, 0, 2, 1) {
+      FixedSizeBinary(width)
+    }
+    16 => {
+      let size = field_int(data, t, 0, 4, 0)
+      if size <= 0 {
+        raise Invalid("FixedSizeList size must be positive")
+      }
+      FixedSizeList(size)
+    }
+    17 => {
+      let sorted = field_int(data, t, 0, 1, 0)
+      if sorted > 1 {
+        raise Invalid("invalid Map keysSorted flag")
+      }
+      Map(sorted == 1)
+    }
+    19 => LargeBinary
+    20 => LargeUtf8
+    8 =>
+      match field_int(data, t, 0, 2, 1) {
         0 => Date32
         1 => Date64
         _ => raise Unsupported("date unit")
       }
-      10 => Timestamp(
+    10 =>
+      Timestamp(
         decode_time_unit(field_int(data, t, 0, 2, 0)),
         match field_ref(data, t, 1) {
           None => None
           Some(p) => Some(read_string(data, p))
         },
       )
-      18 => Duration(decode_time_unit(field_int(data, t, 0, 2, 1)))
-      12 => List
-      21 => LargeList
-      13 => Struct
-      _ => raise Unsupported("Arrow type tag " + tag.to_string())
-    }
-    let data_type = match field_ref(data, f, 4) {
-      None => value_type
-      Some(dictionary) => {
-        if value_type != Utf8 && value_type != Binary {
-          raise Unsupported("dictionary value type")
-        }
-        let index = required_ref(data, dictionary, 1)
-        if field_int(data, index, 0, 4, 0) != 32 ||
-          field_int(data, index, 1, 1, 0) != 1 {
-          raise Unsupported("dictionary index type")
-        }
-        let ordered = field_int(data, dictionary, 2, 1, 0)
-        if ordered > 1 || field_int(data, dictionary, 3, 2, 0) != 0 {
-          raise Unsupported("dictionary ordering or kind")
-        }
-        Dictionary(field_long(data, dictionary, 0), value_type, ordered == 1)
+    18 => Duration(decode_time_unit(field_int(data, t, 0, 2, 1)))
+    12 => List
+    21 => LargeList
+    13 => Struct
+    _ => raise Unsupported("Arrow type tag " + tag.to_string())
+  }
+  let data_type = match field_ref(data, f, 4) {
+    None => value_type
+    Some(dictionary) => {
+      if value_type != Utf8 && value_type != Binary {
+        raise Unsupported("dictionary value type")
       }
+      let index = required_ref(data, dictionary, 1)
+      if field_int(data, index, 0, 4, 0) != 32 ||
+        field_int(data, index, 1, 1, 0) != 1 {
+        raise Unsupported("dictionary index type")
+      }
+      let ordered = field_int(data, dictionary, 2, 1, 0)
+      if ordered > 1 || field_int(data, dictionary, 3, 2, 0) != 0 {
+        raise Unsupported("dictionary ordering or kind")
+      }
+      Dictionary(field_long(data, dictionary, 0), value_type, ordered == 1)
     }
-    let (p, n) = vector_info(data, f, 5, 4, limits.max_fields)
-    let nested_one = data_type == List || data_type == LargeList || (match data_type {
-      FixedSizeList(_) => true
+  }
+  let (p, n) = vector_info(data, f, 5, 4, limits.max_fields)
+  let nested_one = data_type == List ||
+    data_type == LargeList ||
+    (match data_type {
+      FixedSizeList(_) | Map(_) => true
       _ => false
     })
-    if (nested_one && n != 1) ||
-      (!nested_one && data_type != Struct && n != 0) {
-      raise Invalid("invalid child field count")
+  if (nested_one && n != 1) || (!nested_one && data_type != Struct && n != 0) {
+    raise Invalid("invalid child field count")
+  }
+  let children = []
+  let mut total = 1
+  for i in 0..<n {
+    let (child, used) = decode_field(
+      data,
+      follow_offset(data, p + i * 4),
+      limits,
+      depth + 1,
+    )
+    if used > limits.max_fields - total {
+      raise LimitExceeded("total field count")
     }
-    let children = []
-    let mut total = 1
-    for i in 0..<n {
-      let (child, used) = decode_field(data, follow_offset(data, p + i * 4), limits, depth + 1)
-      if used > limits.max_fields - total { raise LimitExceeded("total field count") }
-      total += used
-      children.push(child)
-    }
-    (Field::{
+    total += used
+    children.push(child)
+  }
+  (
+    Field::{
       name,
       data_type,
       nullable: nullable == 1,
       metadata: decode_metadata(data, f, 6, limits),
       children,
-    }, total)
+    },
+    total,
+  )
 }
 
 ///|
@@ -267,7 +322,13 @@ fn decode_schema(
   if field_int(data, table, 0, 2, 0) != 0 {
     raise Unsupported("big-endian schema")
   }
-  let (feature_base, features) = vector_info(data, table, 3, 8, limits.max_fields)
+  let (feature_base, features) = vector_info(
+    data,
+    table,
+    3,
+    8,
+    limits.max_fields,
+  )
   for i in 0..<features {
     if read_i64(data, feature_base + i * 8) != 1L {
       raise Unsupported("schema feature")
@@ -277,12 +338,22 @@ fn decode_schema(
   let fields = []
   let mut total = 0
   for i in 0..<n {
-    let (field, used) = decode_field(data, follow_offset(data, p + i * 4), limits, 0)
-    if used > limits.max_fields - total { raise LimitExceeded("total field count") }
+    let (field, used) = decode_field(
+      data,
+      follow_offset(data, p + i * 4),
+      limits,
+      0,
+    )
+    if used > limits.max_fields - total {
+      raise LimitExceeded("total field count")
+    }
     total += used
     fields.push(field)
   }
-  let schema = Schema::{ fields, metadata: decode_metadata(data, table, 2, limits), }
+  let schema = Schema::{
+    fields,
+    metadata: decode_metadata(data, table, 2, limits),
+  }
   validate_schema(schema)
   schema
 }

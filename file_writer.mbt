@@ -16,8 +16,14 @@ pub struct FileWriter {
 pub fn FileWriter::new(schema : Schema) -> FileWriter raise ArrowError {
   validate_schema(schema)
   {
-    schema_value: copy_schema(schema), blocks: [], dictionary_blocks: [],
-    dictionaries: [], offset: 0, started: false, finished: false, failed: false,
+    schema_value: copy_schema(schema),
+    blocks: [],
+    dictionary_blocks: [],
+    dictionaries: [],
+    offset: 0,
+    started: false,
+    finished: false,
+    failed: false,
   }
 }
 
@@ -52,11 +58,13 @@ fn FileWriter::append_dictionary(
   let layout = dictionary_layout(values)
   let metadata = dictionary_message(id, values.length(), layout, false)
   if metadata.length() > 0x7fffffff - self.offset - out.length() - 8 ||
-    layout.body.length() > 0x7fffffff - self.offset - out.length() - metadata.length() - 8 {
+    layout.body.length() >
+    0x7fffffff - self.offset - out.length() - metadata.length() - 8 {
     raise LimitExceeded("file size")
   }
   self.dictionary_blocks.push(FileBlock::{
-    offset: self.offset + out.length(), metadata_size: 8 + metadata.length(),
+    offset: self.offset + out.length(),
+    metadata_size: 8 + metadata.length(),
     body_size: layout.body.length(),
   })
   write_frame(out, metadata, layout.body)
@@ -65,13 +73,18 @@ fn FileWriter::append_dictionary(
 
 ///|
 /// Return the framed batch and any first-use dictionary messages.
-pub fn FileWriter::write_batch(self : FileWriter, batch : RecordBatch) -> Bytes raise ArrowError {
+pub fn FileWriter::write_batch(
+  self : FileWriter,
+  batch : RecordBatch,
+) -> Bytes raise ArrowError {
   if !self.started || self.finished || self.failed {
     raise Invalid("file writer is not active")
   }
   self.failed = true
   batch.validate()
-  if batch.schema != self.schema_value { raise Invalid("batch schema mismatch") }
+  if batch.schema != self.schema_value {
+    raise Invalid("batch schema mismatch")
+  }
   let out : Array[Byte] = []
   for i in 0..<self.schema_value.fields.length() {
     if self.schema_value.fields[i].data_type is Dictionary(id, _, _) {
@@ -84,15 +97,19 @@ pub fn FileWriter::write_batch(self : FileWriter, batch : RecordBatch) -> Bytes 
   let layout = encode_body(batch)
   let metadata = batch_message(batch.num_rows, layout)
   if metadata.length() > 0x7fffffff - self.offset - out.length() - 8 ||
-    layout.body.length() > 0x7fffffff - self.offset - out.length() - metadata.length() - 8 {
+    layout.body.length() >
+    0x7fffffff - self.offset - out.length() - metadata.length() - 8 {
     raise LimitExceeded("file size")
   }
   self.blocks.push(FileBlock::{
-    offset: self.offset + out.length(), metadata_size: 8 + metadata.length(),
+    offset: self.offset + out.length(),
+    metadata_size: 8 + metadata.length(),
     body_size: layout.body.length(),
   })
   write_frame(out, metadata, layout.body)
-  if out.length() > 0x7fffffff - self.offset { raise LimitExceeded("file size") }
+  if out.length() > 0x7fffffff - self.offset {
+    raise LimitExceeded("file size")
+  }
   self.offset += out.length()
   self.failed = false
   Bytes::from_array(out)
@@ -107,7 +124,11 @@ pub fn FileWriter::finish(self : FileWriter) -> Bytes raise ArrowError {
   self.failed = true
   let out : Array[Byte] = []
   write_eos(out)
-  let footer = encode_footer(self.schema_value, self.blocks, self.dictionary_blocks)
+  let footer = encode_footer(
+    self.schema_value,
+    self.blocks,
+    self.dictionary_blocks,
+  )
   if footer.length() > 0x7fffffff - self.offset - 18 {
     raise LimitExceeded("file footer size")
   }

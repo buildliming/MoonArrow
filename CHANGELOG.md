@@ -1,5 +1,21 @@
 # Changelog
 
+## Unreleased — ecosystem build-out
+
+- Added numeric widths, temporal types, large/fixed binary, recursive List,
+  LargeList, FixedSizeList, Struct and Map IPC layouts.
+- Added top-level Int32-index Utf8/Binary dictionaries, stream replacement and
+  delta handling, file dictionary indices, and bounded dictionary state.
+- Added owned row builder, Table/RecordBatch transforms, predicates, typed
+  scalar access, summaries, and stream/file metadata inspection.
+- Added incremental stream reader/writer and chunked file writer APIs.
+- Expanded four-backend tests and PyArrow interoperability fixtures; added
+  independent consumer, two file workflows, source-line gate and benchmarks.
+
+This is a source-tree changelog. The `moon.mod` version remains 0.1.0 until a
+separate reviewed registry release. New APIs are not available from the
+published 0.1.0 package.
+
 ## 0.1.0 — Initial implementation
 
 ### Added

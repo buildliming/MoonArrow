@@ -4,23 +4,37 @@ fn validate_field_schema(
   depth : Int,
   seen : Array[(Int64, DataType, Bool)],
 ) -> Unit raise ArrowError {
-  if depth > 64 { raise LimitExceeded("schema nesting depth") }
+  if depth > 64 {
+    raise LimitExceeded("schema nesting depth")
+  }
   match field.data_type {
-    List | LargeList => {
-      if field.children.length() != 1 { raise Invalid("List must have one child field") }
-    }
-    FixedSizeList(size) => {
+    List | LargeList =>
+      if field.children.length() != 1 {
+        raise Invalid("List must have one child field")
+      }
+    FixedSizeList(size) =>
       if size <= 0 || field.children.length() != 1 {
         raise Invalid("FixedSizeList requires positive size and one child")
       }
-    }
+    Map(_) =>
+      if field.children.length() != 1 ||
+        field.children[0].data_type != Struct ||
+        field.children[0].nullable ||
+        field.children[0].children.length() != 2 ||
+        field.children[0].children[0].nullable {
+        raise Invalid("Map requires nonnullable entries and keys")
+      }
     Struct => ()
     Dictionary(id, inner, ordered) => {
-      if depth != 0 { raise Unsupported("nested dictionary fields") }
+      if depth != 0 {
+        raise Unsupported("nested dictionary fields")
+      }
       if inner != Utf8 && inner != Binary {
         raise Unsupported("dictionary values must be Utf8 or Binary")
       }
-      if !field.children.is_empty() { raise Invalid("dictionary field has children") }
+      if !field.children.is_empty() {
+        raise Invalid("dictionary field has children")
+      }
       for entry in seen {
         let (found, found_type, found_ordered) = entry
         if found == id {
@@ -32,12 +46,14 @@ fn validate_field_schema(
       }
       seen.push((id, inner, ordered))
     }
-    FixedSizeBinary(width) => if width <= 0 || !field.children.is_empty() {
-      raise Invalid("invalid fixed-size binary field")
-    }
-    _ => if !field.children.is_empty() {
-      raise Invalid("primitive field has children")
-    }
+    FixedSizeBinary(width) =>
+      if width <= 0 || !field.children.is_empty() {
+        raise Invalid("invalid fixed-size binary field")
+      }
+    _ =>
+      if !field.children.is_empty() {
+        raise Invalid("primitive field has children")
+      }
   }
   for child in field.children {
     validate_field_schema(child, depth + 1, seen)

@@ -1,86 +1,79 @@
 # MoonArrow · 月矢
 
-**纯 MoonBit 实现的 Apache Arrow IPC 库，让列式数据在 MoonBit 与主流数据工具之间自由流动。**
+**纯 MoonBit 实现的 Apache Arrow IPC 交换层。** 无 Arrow C/C++ 运行时或
+FFI 依赖，可在 Native、JavaScript、Wasm、Wasm-GC 后端构建和测试。
+项目模块为 `shunge/arrow`，适合在 MoonBit 程序与 Python 等数据工具之间
+交换列式批次。
 
-MoonArrow 为 MoonBit 生态提供跨平台的列式数据交换能力。项目无需 C/C++
-绑定，支持 Arrow IPC 流与文件读写、空值处理、元数据保留和多批次访问，
-覆盖 Native、JavaScript、Wasm 与 Wasm-GC 后端，并通过 PyArrow 双向互操作
-验证，为数据分析、数据库集成和浏览器端数据处理提供基础支持。
+> 当前仓库是 **0.1.0 之后的未发布开发版本**。Mooncakes 上的 `0.1.0`
+> 只有初始七种基础类型；本页的新功能需从本仓库源码使用。它是 Arrow IPC
+> 的明确子集，不代表完整 Arrow 规范实现。
 
-A pure MoonBit implementation of a focused Apache Arrow IPC subset, with no
-Arrow C/C++ runtime or FFI dependency. PyArrow is used only as a test oracle.
+## 当前开发版能力
 
-> **状态：0.1.0 初始实现。** 当前覆盖下表中的类型和功能，尚未实现完整 Arrow
-> 规范。项目名称为 MoonArrow，Mooncakes 模块名为 `shunge/arrow`。
-
-## 能力与边界
-
-| 能力 | 当前支持 |
+| 领域 | 范围 |
 | --- | --- |
-| 列类型 | Null、Boolean、Int32、Int64、Float64、Utf8、Binary |
-| 数据完整性 | 空值位图、非空字段检查、Int64 完整精度、Float64 位模式 |
-| IPC stream | V5 写入，V4/V5 读取，兼容 legacy 前缀 |
-| IPC file | ARROW1 文件、footer 索引、多批次与随机批次读取 |
-| 元数据 | schema/field UTF-8 key/value，保留顺序、重复键和缺省值 |
-| 编译后端 | Native、JavaScript、Wasm、Wasm-GC |
+| 标量 | Null、Boolean、Int8/16/32/64、UInt8/16/32/64、Float32/64、Date32/64、Timestamp、Duration、Utf8/Binary、LargeUtf8/LargeBinary、FixedSizeBinary |
+| 复合类型 | List、LargeList、FixedSizeList、Struct、Map；顶层 Int32 索引且值为 Utf8/Binary 的 Dictionary |
+| IPC | Stream/file 读写、V4/V5 读取、文件 footer 索引、字典消息、分块输入与逐批输出 |
+| 数据操作 | 类型化逐行构建、Table/RecordBatch 投影与筛选、切片、拼接、重分块、行读取、统计摘要和索引检查 |
+| 验证 | 四后端 MoonBit 测试；Native/JS 的 PyArrow 双向互操作与两个文件工作流 |
 
-目前未支持嵌套类型、字典编码、压缩、时间/日期、其他数值类型和零拷贝访问。
-Reader 接收完整 `Bytes`，不执行文件或网络 I/O；逐批解码不等于网络增量解析。
-详细限制见[格式契约](docs/FORMAT.md)。
+支持范围、边界、内存所有权和错误语义见[格式契约](docs/FORMAT.md)。
+压缩 IPC、Decimal、零拷贝、真实文件/网络 I/O 适配器与完整 Apache Arrow
+集成套件尚未提供。
 
-## 安装到现有项目
+## 开始使用
 
-```sh
-moon add shunge/arrow@0.1.0
-```
-
-在 `moon.pkg` 中导入 `shunge/arrow`，详见[使用指南](README.mbt.md)。
-[Mooncakes 模块页面](https://mooncakes.io/docs/shunge/arrow)
-
-## 快速运行
-
-安装 [MoonBit 工具链](https://www.moonbitlang.com/download/) 后：
+安装 [MoonBit 工具链](https://www.moonbitlang.com/download/) 后，在仓库根目录运行：
 
 ```sh
-git clone https://github.com/buildliming/MoonArrow.git
-cd MoonArrow
-moon run cmd/main --target native
+moon run examples/consumer --target native
+moon check --target all --deny-warn
 moon test --target all
 ```
 
-示例写入并读取含可空字符串和 64 位整数的 Arrow 文件，输出：
+`examples/consumer` 是独立 MoonBit 模块，借助 `moon.work` 从本地源码依赖
+`shunge/arrow`，只调用公开 API。0.1.0 已发布能力可以通过
+`moon add shunge/arrow@0.1.0` 安装；开发版扩展尚未发布到 Mooncakes。
 
-```text
-Arrow IPC file: 1066 bytes, 1 batch, 2 rows
-Nulls in name column: 1
-```
-
-库的完整使用示例见[使用指南](README.mbt.md)，其中 MoonBit 示例由文档测试验证。
-
-## 独立兼容性验证
-
-需要 Python 和 Node.js（JS 后端）：
+真实 `.arrow` 文件的两个小型端到端工作流：
 
 ```sh
 python -m pip install -r tools/requirements-interop.txt
-python tools/interop.py --target native
-python tools/interop.py --target js
+python tools/workflow.py --target native --output-dir outputs/workflows
+python tools/workflow.py --target js --output-dir outputs/workflows-js
 ```
 
-测试由 PyArrow 生成输入，MoonBit 解码后重写，再由 PyArrow 读取并校验。
-本地四后端各通过 18 项测试；Native 和 JS 各通过 80 项独立互操作断言。
-测试环境、覆盖范围与局限见[验证记录](docs/VALIDATION.md)。
+第一个工作流跨两个批次筛选非空 ID、投影字段；第二个处理
+Dictionary、List、Struct、Map。PyArrow 创建输入文件并验证 MoonBit 输出文件。
+示例的命令行适配器使用十六进制参数传输小文件，不适合大文件或性能测量。
 
-## 文档导航
+## 验证与基准
 
-- [使用指南与可运行示例](README.mbt.md)
-- [格式契约与支持范围](docs/FORMAT.md)
-- [开发与验证流程](CONTRIBUTING.md)
-- [参赛定位与后续路线](docs/ROADMAP.zh-CN.md)
+```sh
+python tools/interop.py --target native
+python tools/interop.py --target js
+python tools/count_core.py --min-effective 4001
+python -m pip install -r tools/requirements-bench.txt
+python tools/bench.py --target native --output bench/native-local.json
+```
+
+本地 2026-09-24 验证记录、原始 Native/JS 基准和测量限制见
+[验证记录](docs/VALIDATION.md)。核心代码按仓库内可复现脚本统计；
+行数是实施规模指标，功能和正确性仍以测试及独立互操作为准。
+
+## 文档
+
+- [MoonBit API 使用指南](README.mbt.md)
+- [格式契约与兼容边界](docs/FORMAT.md)
+- [架构与 API 所有权](docs/ARCHITECTURE.md)
+- [从 0.1.0 迁移](docs/MIGRATION.md)
+- [实施状态与剩余工作](docs/IMPLEMENTATION_STATUS.zh-CN.md)
+- [验证与性能记录](docs/VALIDATION.md)
+- [最初的项目完善计划](PROJECT_PLAN.zh-CN.md)
+- [开发与贡献](CONTRIBUTING.md)
 - [变更记录](CHANGELOG.md)
-- [首批 10 个提交的划分说明](docs/INITIAL_COMMITS.zh-CN.md)
 
-## 许可
-
-沿用仓库的 [MIT License](LICENSE)。本项目是 Apache Arrow 格式的独立实现，
+本项目采用 [MIT License](LICENSE)，是 Apache Arrow 格式的独立实现，
 不属于 Apache 软件基金会项目，也不代表其官方实现。

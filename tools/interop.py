@@ -21,6 +21,16 @@ ROOT = Path(__file__).resolve().parents[1]
 TYPES = [pa.null(), pa.bool_(), pa.int32(), pa.int64(), pa.float64(), pa.string(), pa.binary()]
 
 
+def json_nested(value):
+    if isinstance(value, tuple):
+        return [json_nested(v) for v in value]
+    if isinstance(value, list):
+        return [json_nested(v) for v in value]
+    if isinstance(value, dict):
+        return {k: json_nested(v) for k, v in value.items()}
+    return value
+
+
 def metadata_json(metadata):
     return [[k.decode("utf-8"), v.decode("utf-8")] for k, v in (metadata or {}).items()]
 
@@ -57,7 +67,7 @@ def normalize(schema, batches):
                         pa.types.is_binary(field.type.value_type)
                     ):
                         value = value.hex()
-                values.append(value)
+                values.append(json_nested(value))
             columns.append(values)
         result["batches"].append({"rows": batch.num_rows, "columns": columns})
     return result
@@ -198,6 +208,13 @@ def large_list_case():
     return schema, [pa.RecordBatch.from_arrays([array], schema=schema)]
 
 
+def map_case():
+    typ = pa.map_(pa.string(), pa.int32())
+    schema = pa.schema([pa.field("attrs", typ)])
+    array = pa.array([[('a', 1), ('b', None)], None, [], [('x', -7)]], type=typ)
+    return schema, [pa.RecordBatch.from_arrays([array], schema=schema)]
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--skip-build", action="store_true")
@@ -206,7 +223,7 @@ def main():
     args = parser.parse_args()
     if not args.skip_build:
         subprocess.run(["moon", "build", "--target", args.target], cwd=ROOT, check=True)
-    build = ROOT / "_build" / args.target / "debug" / "build" / "cmd" / "interop"
+    build = ROOT / "_build" / args.target / "debug" / "build" / "shunge" / "arrow" / "cmd" / "interop"
     if args.target == "native":
         command = [str(build / ("interop.exe" if os.name == "nt" else "interop.exe"))]
         if not Path(command[0]).exists():
@@ -278,6 +295,10 @@ def main():
     schema, batches = large_list_case()
     for kind in ["stream", "file"]:
         verify(schema, batches, write_arrow(schema, batches, kind), kind, "large-list")
+
+    schema, batches = map_case()
+    for kind in ["stream", "file"]:
+        verify(schema, batches, write_arrow(schema, batches, kind), kind, "map")
 
     schema, batches = dictionary_replacement_case()
     raw = write_arrow(schema, batches, "stream")

@@ -52,7 +52,7 @@ fn read_fixed(data : Bytes, p : Int, width : Int) -> Int64 raise ArrowError {
 ///|
 fn signed_fixed(value : Int64, width : Int) -> Int {
   let shift = 64 - width * 8
-  ((value << shift) >> shift).to_int()
+  (value << shift >> shift).to_int()
 }
 
 ///|

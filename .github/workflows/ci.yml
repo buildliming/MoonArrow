@@ -29,5 +29,7 @@ jobs:
       - run: python tools/interop.py --target js
       - run: moon info
       - run: moon fmt --check
-      - run: python tools/count_core.py
+      - run: python tools/count_core.py --min-effective 4001
+      - run: moon run examples/consumer --target native
+      - run: python tools/workflow.py --target native
       - run: git diff --exit-code -- '*.mbti'
