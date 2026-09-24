@@ -144,9 +144,15 @@ fn decode_dictionary_frame(
   let batch = decode_body(batch_frame, Schema::new([field]), limits, entries)
   let values = batch.columns[0]
   let slot = dictionary_slot(entries, id)
+  if values.length() > limits.max_dictionary_values {
+    raise LimitExceeded("dictionary values")
+  }
   if is_delta == 1 {
     if slot < 0 { raise Invalid("dictionary delta before base") }
     let existing = entries[slot]
+    if existing.values.length() > limits.max_dictionary_values - values.length() {
+      raise LimitExceeded("dictionary values")
+    }
     entries[slot] = { ..existing, values: existing.values.append_checked(values), }
   } else if slot >= 0 {
     if !allow_replacement { raise Unsupported("dictionary replacement in file") }

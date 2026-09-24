@@ -18,6 +18,7 @@ fn validate_batches(
   schema : Schema,
   batches : Array[RecordBatch],
 ) -> Unit raise ArrowError {
+  validate_schema(schema)
   for batch in batches {
     batch.validate()
     if batch.schema != schema {
@@ -56,6 +57,7 @@ pub struct StreamReader {
   priv mut count : Int
   priv mut finished : Bool
   priv dictionaries : Array[DictionaryEntry]
+  priv mut dictionary_messages : Int
 }
 
 ///|
@@ -72,7 +74,8 @@ pub fn StreamReader::new(
     raise Invalid("stream must start with a schema")
   }
   let schema = decode_schema(frame.metadata, frame.header, limits)
-  { schema, data, limits, offset: frame.next, count: 0, finished: false, dictionaries: [], }
+  { schema, data, limits, offset: frame.next, count: 0, finished: false,
+    dictionaries: [], dictionary_messages: 0, }
 }
 
 ///|
@@ -89,7 +92,11 @@ pub fn StreamReader::next(self : StreamReader) -> RecordBatch? raise ArrowError 
     }
     self.offset = frame.next
     if frame.kind == 2 {
+      if self.dictionary_messages >= self.limits.max_dictionary_messages {
+        raise LimitExceeded("dictionary message count")
+      }
       decode_dictionary_frame(frame, self.schema, self.dictionaries, self.limits, true)
+      self.dictionary_messages += 1
       continue
     }
     if self.count >= self.limits.max_batches { raise LimitExceeded("batch count") }
@@ -226,7 +233,8 @@ fn file_blocks(
   limits : ReadLimits,
   footer_start : Int,
 ) -> Array[FileBlock] raise ArrowError {
-  let (p, count) = vector_info(footer, root, slot, 24, limits.max_batches)
+  let limit = if slot == 2 { limits.max_dictionary_messages } else { limits.max_batches }
+  let (p, count) = vector_info(footer, root, slot, 24, limit)
   let blocks = []
   let mut previous = -1
   for i in 0..<count {
@@ -240,7 +248,7 @@ fn file_blocks(
       body_size > footer_start - offset - metadata_size {
       raise Invalid("invalid file block")
     }
-    if metadata_size > limits.max_metadata_bytes + 8 {
+    if metadata_size - 8 > limits.max_metadata_bytes {
       raise LimitExceeded("file block metadata size")
     }
     blocks.push({ offset, metadata_size, body_size, })

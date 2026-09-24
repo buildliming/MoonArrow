@@ -256,7 +256,9 @@ fn decode_schema(
     total += used
     fields.push(field)
   }
-  { fields, metadata: decode_metadata(data, table, 2, limits), }
+  let schema = Schema::{ fields, metadata: decode_metadata(data, table, 2, limits), }
+  validate_schema(schema)
+  schema
 }
 
 ///|

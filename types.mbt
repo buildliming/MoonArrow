@@ -320,6 +320,8 @@ pub(all) struct ReadLimits {
   max_metadata_bytes : Int
   max_body_bytes : Int
   max_depth : Int
+  max_dictionary_values : Int
+  max_dictionary_messages : Int
 } derive(Debug)
 
 ///|
@@ -332,6 +334,8 @@ pub fn ReadLimits::default() -> ReadLimits {
     max_metadata_bytes: 16 * 1024 * 1024,
     max_body_bytes: 256 * 1024 * 1024,
     max_depth: 64,
+    max_dictionary_values: 8_000_000,
+    max_dictionary_messages: 10_000,
   }
 }
 
@@ -342,7 +346,8 @@ fn ReadLimits::validate(self : ReadLimits) -> Unit raise ArrowError {
     self.max_fields < 0 ||
     self.max_batches < 0 ||
     self.max_metadata_bytes < 0 ||
-    self.max_body_bytes < 0 || self.max_depth < 0 {
+    self.max_body_bytes < 0 || self.max_depth < 0 ||
+    self.max_dictionary_values < 0 || self.max_dictionary_messages < 0 {
     raise Invalid("reader limits must be nonnegative")
   }
 }
