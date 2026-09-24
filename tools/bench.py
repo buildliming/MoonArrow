@@ -29,6 +29,8 @@ def main() -> None:
     build = ROOT / "_build" / args.target / "debug" / "build" / "shunge" / "arrow" / "cmd" / "bench"
     if args.target == "native":
         exe = build / ("bench.exe" if os.name == "nt" else "bench")
+        if not exe.exists():
+            exe = build / "bench.exe"
         command = [str(exe)]
     else:
         command = ["node", str(build / "bench.js")]

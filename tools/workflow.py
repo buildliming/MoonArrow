@@ -24,6 +24,8 @@ def command_for(target: str) -> list[str]:
     if target == "js":
         return ["node", str(build / "interop.js")]
     binary = build / ("interop.exe" if os.name == "nt" else "interop")
+    if not binary.exists():
+        binary = build / "interop.exe"
     return [str(binary)]
 
 
