@@ -1,12 +1,14 @@
 ///|
+fn copy_field(field : Field) -> Field {
+  Field::new(field.name, field.data_type, nullable=field.nullable,
+    metadata=field.metadata.map(kv => kv),
+    children=field.children.map(child => copy_field(child)))
+}
+
+///|
 fn copy_schema(schema : Schema) -> Schema {
   Schema::new(
-    schema.fields.map(field => Field::new(
-      field.name,
-      field.data_type,
-      nullable=field.nullable,
-      metadata=field.metadata.map(kv => kv),
-    )),
+    schema.fields.map(field => copy_field(field)),
     metadata=schema.metadata.map(kv => kv),
   )
 }
@@ -43,6 +45,17 @@ fn Column::take_checked(self : Column, indices : Array[Int]) -> Column {
     Date64s(a) => Date64s(take_values(a, indices))
     Timestamps(a, unit, timezone) => Timestamps(take_values(a, indices), unit, timezone)
     Durations(a, unit) => Durations(take_values(a, indices), unit)
+    Lists(offsets, validity, child) => {
+      let child_indices = []
+      let selected_offsets = [0]
+      for index in indices {
+        for j in offsets[index]..<offsets[index + 1] { child_indices.push(j) }
+        selected_offsets.push(child_indices.length())
+      }
+      Lists(selected_offsets, take_values(validity, indices), child.take_checked(child_indices))
+    }
+    Structs(validity, children) => Structs(take_values(validity, indices),
+      children.map(child => child.take_checked(indices)))
     Strings(a) => Strings(take_values(a, indices))
     Binaries(a) => Binaries(take_values(a, indices))
   }
@@ -67,6 +80,22 @@ fn Column::append_checked(self : Column, other : Column) -> Column raise ArrowEr
     (Date64s(a), Date64s(b)) => Date64s(append_values(a, b))
     (Timestamps(a, u, z), Timestamps(b, _, _)) => Timestamps(append_values(a, b), u, z)
     (Durations(a, u), Durations(b, _)) => Durations(append_values(a, b), u)
+    (Lists(a, av, ac), Lists(b, bv, bc)) => {
+      let left = Lists(a, av, ac).take_checked(Array::makei(av.length(), i => i))
+      let right = Lists(b, bv, bc).take_checked(Array::makei(bv.length(), i => i))
+      guard left is Lists(la, lv, lc) && right is Lists(rb, rv, rc) else {
+        raise Invalid("internal List concat")
+      }
+      let offsets = la.map(x => x)
+      let base = la[la.length() - 1]
+      for i in 1..<rb.length() { offsets.push(base + rb[i]) }
+      Lists(offsets, append_values(lv, rv), lc.append_checked(rc))
+    }
+    (Structs(av, ac), Structs(bv, bc)) => {
+      let children = []
+      for i in 0..<ac.length() { children.push(ac[i].append_checked(bc[i])) }
+      Structs(append_values(av, bv), children)
+    }
     (Strings(a), Strings(b)) => Strings(append_values(a, b))
     (Binaries(a), Binaries(b)) => Binaries(append_values(a, b))
     _ => raise Invalid("column type mismatch in concat")
@@ -85,8 +114,7 @@ pub fn RecordBatch::project(self : RecordBatch, indices : Array[Int]) -> RecordB
       raise Invalid("project field index out of range")
     }
     let field = self.schema.fields[index]
-    fields.push(Field::new(field.name, field.data_type, nullable=field.nullable,
-      metadata=field.metadata.map(kv => kv)))
+    fields.push(copy_field(field))
     columns.push(self.columns[index].take_checked(Array::makei(self.num_rows, i => i)))
   }
   RecordBatch::new(Schema::new(fields, metadata=self.schema.metadata.map(kv => kv)),

@@ -34,6 +34,8 @@ pub(all) enum DataType {
   Date64
   Timestamp(TimeUnit, String?)
   Duration(TimeUnit)
+  List
+  Struct
   Utf8
   Binary
 } derive(Eq, Debug)
@@ -52,6 +54,7 @@ pub(all) struct Field {
   data_type : DataType
   nullable : Bool
   metadata : Array[KeyValue]
+  children : Array[Field]
 } derive(Eq, Debug)
 
 ///|
@@ -60,8 +63,9 @@ pub fn Field::new(
   data_type : DataType,
   nullable? : Bool = true,
   metadata? : Array[KeyValue] = [],
+  children? : Array[Field] = [],
 ) -> Field {
-  { name, data_type, nullable, metadata, }
+  { name, data_type, nullable, metadata, children, }
 }
 
 ///|
@@ -99,6 +103,8 @@ pub(all) enum Column {
   Date64s(Array[Int64?])
   Timestamps(Array[Int64?], TimeUnit, String?)
   Durations(Array[Int64?], TimeUnit)
+  Lists(Array[Int], Array[Bool], Column)
+  Structs(Array[Bool], Array[Column])
   Strings(Array[String?])
   Binaries(Array[Bytes?])
 } derive(Debug)
@@ -122,6 +128,8 @@ pub fn Column::length(self : Column) -> Int {
     Date64s(a) => a.length()
     Timestamps(a, _, _) => a.length()
     Durations(a, _) => a.length()
+    Lists(offsets, _, _) => offsets.length() - 1
+    Structs(validity, _) => validity.length()
     Strings(a) => a.length()
     Binaries(a) => a.length()
   }
@@ -146,6 +154,8 @@ pub fn Column::data_type(self : Column) -> DataType {
     Date64s(_) => Date64
     Timestamps(_, unit, timezone) => Timestamp(unit, timezone)
     Durations(_, unit) => Duration(unit)
+    Lists(_, _, _) => List
+    Structs(_, _) => Struct
     Strings(_) => Utf8
     Binaries(_) => Binary
   }
@@ -170,6 +180,8 @@ fn Column::valid_at(self : Column, i : Int) -> Bool {
     Date64s(a) => a[i] is Some(_)
     Timestamps(a, _, _) => a[i] is Some(_)
     Durations(a, _) => a[i] is Some(_)
+    Lists(_, validity, _) => validity[i]
+    Structs(validity, _) => validity[i]
     Strings(a) => a[i] is Some(_)
     Binaries(a) => a[i] is Some(_)
   }
@@ -230,6 +242,7 @@ pub fn RecordBatch::validate(self : RecordBatch) -> Unit raise ArrowError {
     if !field.nullable && column.null_count() != 0 {
       raise Invalid("null in non-nullable field: " + field.name)
     }
+    validate_nested(field, column, 0)
     match column {
       Int8s(a) => for v in a { if v is Some(x) && (x < -128 || x > 127) { raise Invalid("Int8 value outside range: " + field.name) } }
       Int16s(a) => for v in a { if v is Some(x) && (x < -32768 || x > 32767) { raise Invalid("Int16 value outside range: " + field.name) } }
@@ -242,6 +255,47 @@ pub fn RecordBatch::validate(self : RecordBatch) -> Unit raise ArrowError {
 }
 
 ///|
+fn validate_nested(field : Field, column : Column, depth : Int) -> Unit raise ArrowError {
+  if depth > 64 { raise LimitExceeded("nested depth") }
+  match (field.data_type, column) {
+    (List, Lists(offsets, validity, child)) => {
+      if field.children.length() != 1 || offsets.length() != validity.length() + 1 {
+        raise Invalid("invalid List field or offsets")
+      }
+      if offsets.is_empty() || offsets[0] < 0 || offsets[0] > child.length() {
+        raise Invalid("invalid first List offset")
+      }
+      for i in 0..<validity.length() {
+        if offsets[i + 1] < offsets[i] || offsets[i + 1] > child.length() {
+          raise Invalid("invalid List offsets")
+        }
+      }
+      if child.data_type() != field.children[0].data_type ||
+        (!field.children[0].nullable && child.null_count() != 0) {
+        raise Invalid("List child type or nullability mismatch")
+      }
+      validate_nested(field.children[0], child, depth + 1)
+    }
+    (Struct, Structs(validity, children)) => {
+      if field.children.length() != children.length() {
+        raise Invalid("Struct child count mismatch")
+      }
+      for i in 0..<children.length() {
+        let child = children[i]
+        let child_field = field.children[i]
+        if child.length() != validity.length() || child.data_type() != child_field.data_type ||
+          (!child_field.nullable && child.null_count() != 0) {
+          raise Invalid("Struct child length, type or nullability mismatch")
+        }
+        validate_nested(child_field, child, depth + 1)
+      }
+    }
+    (List, _) | (Struct, _) => raise Invalid("nested column type mismatch")
+    (_, _) => if !field.children.is_empty() { raise Invalid("primitive field has children") }
+  }
+}
+
+///|
 /// Limits are checked before allocating decoded arrays. Input bytes are caller-owned.
 pub(all) struct ReadLimits {
   max_rows_per_batch : Int
@@ -250,6 +304,7 @@ pub(all) struct ReadLimits {
   max_batches : Int
   max_metadata_bytes : Int
   max_body_bytes : Int
+  max_depth : Int
 } derive(Debug)
 
 ///|
@@ -261,6 +316,7 @@ pub fn ReadLimits::default() -> ReadLimits {
     max_batches: 10_000,
     max_metadata_bytes: 16 * 1024 * 1024,
     max_body_bytes: 256 * 1024 * 1024,
+    max_depth: 64,
   }
 }
 
@@ -271,7 +327,7 @@ fn ReadLimits::validate(self : ReadLimits) -> Unit raise ArrowError {
     self.max_fields < 0 ||
     self.max_batches < 0 ||
     self.max_metadata_bytes < 0 ||
-    self.max_body_bytes < 0 {
+    self.max_body_bytes < 0 || self.max_depth < 0 {
     raise Invalid("reader limits must be nonnegative")
   }
 }

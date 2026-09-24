@@ -129,6 +129,25 @@ def temporal_case():
     return schema, [pa.RecordBatch.from_arrays(arrays, schema=schema)]
 
 
+def nested_case():
+    list_type = pa.list_(pa.field("item", pa.int32()))
+    struct_type = pa.struct([pa.field("code", pa.int16()),
+                             pa.field("label", pa.string())])
+    list_struct = pa.list_(pa.field("item", struct_type))
+    schema = pa.schema([pa.field("numbers", list_type),
+                        pa.field("record", struct_type),
+                        pa.field("records", list_struct)])
+    columns = [
+        pa.array([[1, None], None, [], [3]], type=list_type),
+        pa.array([{"code": 1, "label": "a"}, None,
+                  {"code": 2, "label": None}, {"code": -1, "label": "z"}],
+                 type=struct_type),
+        pa.array([[{"code": 1, "label": "x"}], None, [],
+                  [{"code": 2, "label": "y"}, None]], type=list_struct),
+    ]
+    return schema, [pa.RecordBatch.from_arrays(columns, schema=schema)]
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--skip-build", action="store_true")
@@ -190,6 +209,10 @@ def main():
     for kind in ["stream", "file"]:
         verify(schema, batches, write_arrow(schema, batches, kind), kind, "temporal")
 
+    schema, batches = nested_case()
+    for kind in ["stream", "file"]:
+        verify(schema, batches, write_arrow(schema, batches, kind), kind, "nested")
+
     schema, batches = generated_case(123, 9)
     for version in [pa.ipc.MetadataVersion.V4, pa.ipc.MetadataVersion.V5]:
         options = pa.ipc.IpcWriteOptions(metadata_version=version, use_legacy_format=True)
@@ -207,7 +230,7 @@ def main():
     for kind in ["stream", "file"]:
         verify(schema, batches, write_arrow(schema, batches, kind), kind, "sliced")
 
-    unsupported = [pa.array([[1], [2]]), pa.array(["a", "b"]).dictionary_encode()]
+    unsupported = [pa.array(["a", "b"]).dictionary_encode()]
     for array in unsupported:
         batch = pa.RecordBatch.from_arrays([array], names=["unsupported"])
         result = call("stream", write_arrow(batch.schema, [batch], "stream"))

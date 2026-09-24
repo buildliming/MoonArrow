@@ -36,15 +36,8 @@ fn decode_metadata(
 }
 
 ///|
-fn encode_schema(out : Array[Byte], schema : Schema) -> Int {
-  let table = fb_table(out, 3)
-  let fields = fb_vector(out, schema.fields.length(), 4, 4)
-  fb_ref(out, table, 1, fields)
-  for i in 0..<schema.fields.length() {
-    let field = schema.fields[i]
+fn encode_field(out : Array[Byte], field : Field) -> Int {
     let f = fb_table(out, 7)
-    let pointer = fields + 4 + i * 4
-    put_i32(out, pointer, f.pos - pointer)
     fb_ref(out, f, 0, fb_string(out, field.name))
     fb_int(out, f, 1, if field.nullable { 1 } else { 0 })
     let (tag, width, signed) = match field.data_type {
@@ -63,6 +56,8 @@ fn encode_schema(out : Array[Byte], schema : Schema) -> Int {
       Date64 => (8, 1, 0)
       Timestamp(_, _) => (10, 0, 0)
       Duration(_) => (18, 0, 0)
+      List => (12, 0, 0)
+      Struct => (13, 0, 0)
       Binary => (4, 0, 0)
       Utf8 => (5, 0, 0)
       Boolean => (6, 0, 0)
@@ -92,6 +87,27 @@ fn encode_schema(out : Array[Byte], schema : Schema) -> Int {
     if !field.metadata.is_empty() {
       fb_ref(out, f, 6, encode_metadata(out, field.metadata))
     }
+    if !field.children.is_empty() {
+      let children = fb_vector(out, field.children.length(), 4, 4)
+      fb_ref(out, f, 5, children)
+      for i in 0..<field.children.length() {
+        let pointer = children + 4 + i * 4
+        let child = encode_field(out, field.children[i])
+        put_i32(out, pointer, child - pointer)
+      }
+    }
+    f.pos
+}
+
+///|
+fn encode_schema(out : Array[Byte], schema : Schema) -> Int {
+  let table = fb_table(out, 3)
+  let fields = fb_vector(out, schema.fields.length(), 4, 4)
+  fb_ref(out, table, 1, fields)
+  for i in 0..<schema.fields.length() {
+    let pointer = fields + 4 + i * 4
+    let field = encode_field(out, schema.fields[i])
+    put_i32(out, pointer, field - pointer)
   }
   if !schema.metadata.is_empty() {
     fb_ref(out, table, 2, encode_metadata(out, schema.metadata))
@@ -100,22 +116,8 @@ fn encode_schema(out : Array[Byte], schema : Schema) -> Int {
 }
 
 ///|
-fn decode_schema(
-  data : Bytes,
-  table : Int,
-  limits : ReadLimits,
-) -> Schema raise ArrowError {
-  if field_int(data, table, 0, 2, 0) != 0 {
-    raise Unsupported("big-endian schema")
-  }
-  let (_, features) = vector_info(data, table, 3, 8, limits.max_fields)
-  if features != 0 {
-    raise Unsupported("schema features (compression or dictionary replacement)")
-  }
-  let (p, n) = vector_info(data, table, 1, 4, limits.max_fields)
-  let fields = []
-  for i in 0..<n {
-    let f = follow_offset(data, p + i * 4)
+fn decode_field(data : Bytes, f : Int, limits : ReadLimits, depth : Int) -> (Field, Int) raise ArrowError {
+    if depth > limits.max_depth { raise LimitExceeded("nested field depth") }
     let name = match field_ref(data, f, 0) {
       None => ""
       Some(s) => read_string(data, s)
@@ -126,10 +128,6 @@ fn decode_schema(
     }
     if field_ref(data, f, 4) is Some(_) {
       raise Unsupported("dictionary encoding")
-    }
-    let (_, children) = vector_info(data, f, 5, 4, limits.max_fields)
-    if children != 0 {
-      raise Unsupported("nested fields")
     }
     let tag = field_int(data, f, 2, 1, 0)
     let t = required_ref(data, f, 3)
@@ -173,14 +171,53 @@ fn decode_schema(
         },
       )
       18 => Duration(decode_time_unit(field_int(data, t, 0, 2, 1)))
+      12 => List
+      13 => Struct
       _ => raise Unsupported("Arrow type tag " + tag.to_string())
     }
-    fields.push(Field::{
+    let (p, n) = vector_info(data, f, 5, 4, limits.max_fields)
+    if (data_type == List && n != 1) ||
+      (data_type != List && data_type != Struct && n != 0) {
+      raise Invalid("invalid child field count")
+    }
+    let children = []
+    let mut total = 1
+    for i in 0..<n {
+      let (child, used) = decode_field(data, follow_offset(data, p + i * 4), limits, depth + 1)
+      if used > limits.max_fields - total { raise LimitExceeded("total field count") }
+      total += used
+      children.push(child)
+    }
+    (Field::{
       name,
       data_type,
       nullable: nullable == 1,
       metadata: decode_metadata(data, f, 6, limits),
-    })
+      children,
+    }, total)
+}
+
+///|
+fn decode_schema(
+  data : Bytes,
+  table : Int,
+  limits : ReadLimits,
+) -> Schema raise ArrowError {
+  if field_int(data, table, 0, 2, 0) != 0 {
+    raise Unsupported("big-endian schema")
+  }
+  let (_, features) = vector_info(data, table, 3, 8, limits.max_fields)
+  if features != 0 {
+    raise Unsupported("schema features (compression or dictionary replacement)")
+  }
+  let (p, n) = vector_info(data, table, 1, 4, limits.max_fields)
+  let fields = []
+  let mut total = 0
+  for i in 0..<n {
+    let (field, used) = decode_field(data, follow_offset(data, p + i * 4), limits, 0)
+    if used > limits.max_fields - total { raise LimitExceeded("total field count") }
+    total += used
+    fields.push(field)
   }
   { fields, metadata: decode_metadata(data, table, 2, limits), }
 }

@@ -64,31 +64,47 @@ fn time_unit_string(unit : @arrow.TimeUnit) -> String {
 }
 
 ///|
+fn field_type_string(field : @arrow.Field) -> String {
+  match field.data_type {
+    Null => "null"
+    Boolean => "bool"
+    Int8 => "int8"
+    Int16 => "int16"
+    Int32 => "int32"
+    Int64 => "int64"
+    UInt8 => "uint8"
+    UInt16 => "uint16"
+    UInt32 => "uint32"
+    UInt64 => "uint64"
+    Float32 => "float"
+    Float64 => "double"
+    Date32 => "date32[day]"
+    Date64 => "date64[ms]"
+    Timestamp(unit, timezone) => "timestamp[" + time_unit_string(unit) + (match timezone {
+      Some(s) => ", tz=" + s
+      None => ""
+    }) + "]"
+    Duration(unit) => "duration[" + time_unit_string(unit) + "]"
+    Utf8 => "string"
+    Binary => "binary"
+    List => "list<" + child_type_string(field.children[0]) + ">"
+    Struct => {
+      let parts = field.children.map(child => child_type_string(child))
+      "struct<" + parts.join(", ") + ">"
+    }
+  }
+}
+
+///|
+fn child_type_string(field : @arrow.Field) -> String {
+  field.name + ": " + field_type_string(field) +
+  (if field.nullable { "" } else { " not null" })
+}
+
+///|
 fn schema_json(schema : @arrow.Schema) -> Json {
   let fields = schema.fields.map(field => {
-    let kind = match field.data_type {
-      Null => "null"
-      Boolean => "bool"
-      Int8 => "int8"
-      Int16 => "int16"
-      Int32 => "int32"
-      Int64 => "int64"
-      UInt8 => "uint8"
-      UInt16 => "uint16"
-      UInt32 => "uint32"
-      UInt64 => "uint64"
-      Float32 => "float"
-      Float64 => "double"
-      Date32 => "date32[day]"
-      Date64 => "date64[ms]"
-      Timestamp(unit, timezone) => "timestamp[" + time_unit_string(unit) + (match timezone {
-        Some(s) => ", tz=" + s
-        None => ""
-      }) + "]"
-      Duration(unit) => "duration[" + time_unit_string(unit) + "]"
-      Utf8 => "string"
-      Binary => "binary"
-    }
+    let kind = field_type_string(field)
     Json::object({
       "name": field.name.to_json(),
       "type": kind.to_json(),
@@ -100,93 +116,70 @@ fn schema_json(schema : @arrow.Schema) -> Json {
 }
 
 ///|
-fn column_json(column : @arrow.Column) -> Json {
+fn cell_json(column : @arrow.Column, field : @arrow.Field, i : Int) -> Json {
   match column {
-    Nulls(n) => Array::make(n, Json::null()).to_json()
-    Booleans(a) =>
-      a
-      .map(v => {
-        match v {
-          Some(x) => x.to_json()
-          None => Json::null()
-        }
-      })
-      .to_json()
-    Int8s(a) | Int16s(a) | UInt8s(a) | UInt16s(a) =>
-      a.map(v => match v {
-        Some(x) => x.to_json()
-        None => Json::null()
-      }).to_json()
-    Int32s(a) =>
-      a
-      .map(v => {
-        match v {
-          Some(x) => x.to_json()
-          None => Json::null()
-        }
-      })
-      .to_json()
-    Int64s(a) =>
-      a
-      .map(v => {
-        match v {
-          Some(x) => Json::string(x.to_string())
-          None => Json::null()
-        }
-      })
-      .to_json()
-    UInt32s(a) =>
-      a.map(v => match v {
-        Some(x) => x.to_json()
-        None => Json::null()
-      }).to_json()
-    UInt64s(a) =>
-      a.map(v => match v {
-        Some(x) => Json::string(x.to_string())
-        None => Json::null()
-      }).to_json()
-    Float32s(a) =>
-      a.map(v => match v {
-        Some(x) => Json::string(x.reinterpret_as_int().to_string())
-        None => Json::null()
-      }).to_json()
-    Float64s(a) =>
-      a
-      .map(v => {
-        match v {
-          Some(x) => Json::string(x.reinterpret_as_int64().to_string())
-          None => Json::null()
-        }
-      })
-      .to_json()
-    Date32s(a) => a.map(v => match v {
+    Nulls(_) => Json::null()
+    Booleans(a) => match a[i] {
       Some(x) => x.to_json()
       None => Json::null()
-    }).to_json()
-    Date64s(a) | Timestamps(a, _, _) | Durations(a, _) =>
-      a.map(v => match v {
+    }
+    Int8s(a) | Int16s(a) | Int32s(a) |
+    UInt8s(a) | UInt16s(a) | Date32s(a) =>
+      match a[i] {
+        Some(x) => x.to_json()
+        None => Json::null()
+      }
+    Int64s(a) | Date64s(a) | Timestamps(a, _, _) | Durations(a, _) =>
+      match a[i] {
         Some(x) => Json::string(x.to_string())
         None => Json::null()
-      }).to_json()
-    Strings(a) =>
-      a
-      .map(v => {
-        match v {
-          Some(x) => x.to_json()
-          None => Json::null()
-        }
-      })
-      .to_json()
-    Binaries(a) =>
-      a
-      .map(v => {
-        match v {
-          Some(x) => Json::string(hex(x))
-          None => Json::null()
-        }
-      })
-      .to_json()
+      }
+    UInt32s(a) => match a[i] {
+      Some(x) => x.to_json()
+      None => Json::null()
+    }
+    UInt64s(a) => match a[i] {
+      Some(x) => Json::string(x.to_string())
+      None => Json::null()
+    }
+    Float32s(a) => match a[i] {
+      Some(x) => Json::string(x.reinterpret_as_int().to_string())
+      None => Json::null()
+    }
+    Float64s(a) => match a[i] {
+      Some(x) => Json::string(x.reinterpret_as_int64().to_string())
+      None => Json::null()
+    }
+    Strings(a) => match a[i] {
+      Some(x) => x.to_json()
+      None => Json::null()
+    }
+    Binaries(a) => match a[i] {
+      Some(x) => Json::string(hex(x))
+      None => Json::null()
+    }
+    Lists(offsets, validity, child) => {
+      if !validity[i] { return Json::null() }
+      let items = []
+      for j in offsets[i]..<offsets[i + 1] {
+        items.push(cell_json(child, field.children[0], j))
+      }
+      Json::array(items)
+    }
+    Structs(validity, children) => {
+      if !validity[i] { return Json::null() }
+      let members : Map[String, Json] = Map([])
+      for j in 0..<children.length() {
+        members[field.children[j].name] = cell_json(children[j], field.children[j], i)
+      }
+      Json::object(members)
+    }
   }
+}
+
+///|
+fn column_json(column : @arrow.Column, field : @arrow.Field) -> Json {
+  Array::makei(column.length(), i => cell_json(column, field, i)).to_json()
 }
 
 ///|
@@ -194,7 +187,8 @@ fn data_json(data : @arrow.IpcData) -> Json {
   let batches = data.batches.map(batch => {
     Json::object({
       "rows": batch.num_rows.to_json(),
-      "columns": batch.columns.map(column_json).to_json(),
+      "columns": Array::makei(batch.columns.length(), i =>
+        column_json(batch.columns[i], data.schema.fields[i])).to_json(),
     })
   })
   { "schema": schema_json(data.schema), "batches": batches.to_json() }

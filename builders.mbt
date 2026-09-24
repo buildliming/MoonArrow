@@ -21,7 +21,7 @@ pub(all) enum Value {
 } derive(Debug)
 
 ///|
-fn empty_column(data_type : DataType) -> Column {
+fn empty_column(data_type : DataType) -> Column raise ArrowError {
   match data_type {
     Null => Nulls(0)
     Boolean => Booleans([])
@@ -39,6 +39,7 @@ fn empty_column(data_type : DataType) -> Column {
     Date64 => Date64s([])
     Timestamp(unit, timezone) => Timestamps([], unit, timezone)
     Duration(unit) => Durations([], unit)
+    List | Struct => raise Unsupported("row builder for nested fields")
     Utf8 => Strings([])
     Binary => Binaries([])
   }
@@ -119,7 +120,7 @@ pub struct BatchBuilder {
 }
 
 ///|
-pub fn BatchBuilder::new(schema : Schema) -> BatchBuilder {
+pub fn BatchBuilder::new(schema : Schema) -> BatchBuilder raise ArrowError {
   let owned = copy_schema(schema)
   { schema: owned, columns: owned.fields.map(f => empty_column(f.data_type)), rows: 0, }
 }

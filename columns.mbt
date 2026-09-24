@@ -10,17 +10,17 @@ fn add_buffer(
 }
 
 ///|
-fn encode_body(batch : RecordBatch) -> BodyLayout raise ArrowError {
-  batch.validate()
-  let body : Array[Byte] = []
-  let nodes = []
-  let buffers = []
-  for column in batch.columns {
-    let n = batch.num_rows
+fn encode_column(
+  body : Array[Byte],
+  nodes : Array[(Int, Int)],
+  buffers : Array[(Int, Int)],
+  column : Column,
+) -> Unit raise ArrowError {
+    let n = column.length()
     let nulls = column.null_count()
     nodes.push((n, nulls))
     if column is Nulls(_) {
-      continue
+      return
     }
     let bitmap : Array[Byte] = []
     if nulls > 0 {
@@ -89,6 +89,20 @@ fn encode_body(batch : RecordBatch) -> BodyLayout raise ArrowError {
       Timestamps(a, _, _) | Durations(a, _) => for value in a {
         put_i64(values, reserve(values, 8), value.unwrap_or(0L))
       }
+      Lists(offsets, _, child) => {
+        for offset in offsets {
+          put_i32(values, reserve(values, 4), offset)
+        }
+        add_buffer(body, buffers, Bytes::from_array(values))
+        encode_column(body, nodes, buffers, child)
+        return
+      }
+      Structs(_, children) => {
+        for child in children {
+          encode_column(body, nodes, buffers, child)
+        }
+        return
+      }
       Strings(_) | Binaries(_) => {
         let offsets : Array[Byte] = []
         put_i32(offsets, reserve(offsets, 4), 0)
@@ -112,6 +126,16 @@ fn encode_body(batch : RecordBatch) -> BodyLayout raise ArrowError {
       }
     }
     add_buffer(body, buffers, Bytes::from_array(values))
+}
+
+///|
+fn encode_body(batch : RecordBatch) -> BodyLayout raise ArrowError {
+  batch.validate()
+  let body : Array[Byte] = []
+  let nodes = []
+  let buffers = []
+  for column in batch.columns {
+    encode_column(body, nodes, buffers, column)
   }
   align_bytes(body, 8)
   { body: Bytes::from_array(body), nodes, buffers, }
@@ -133,276 +157,315 @@ fn body_buffer(frame : Frame, base : Int, i : Int) -> Bytes raise ArrowError {
 }
 
 ///|
+priv struct BodyCursor {
+  nodes : Int
+  node_count : Int
+  mut node : Int
+  buffers : Int
+  buffer_count : Int
+  mut buffer : Int
+  mut remaining_values : Int
+}
+
+///|
+fn field_layout(field : Field) -> (Int, Int) {
+  let mut nodes = 1
+  let mut buffers = match field.data_type {
+    Null => 0
+    Utf8 | Binary => 3
+    List => 2
+    Struct => 1
+    _ => 2
+  }
+  for child in field.children {
+    let (n, b) = field_layout(child)
+    nodes += n
+    buffers += b
+  }
+  (nodes, buffers)
+}
+
+///|
+fn next_body_buffer(frame : Frame, cursor : BodyCursor) -> Bytes raise ArrowError {
+  if cursor.buffer >= cursor.buffer_count { raise Invalid("missing body buffer") }
+  let result = body_buffer(frame, cursor.buffers, cursor.buffer)
+  cursor.buffer += 1
+  result
+}
+
+///|
+fn decode_column(
+  frame : Frame,
+  field : Field,
+  expected : Int,
+  cursor : BodyCursor,
+  limits : ReadLimits,
+  depth : Int,
+) -> Column raise ArrowError {
+  if depth > limits.max_depth { raise LimitExceeded("nested column depth") }
+  if cursor.node >= cursor.node_count { raise Invalid("missing field node") }
+  let metadata = frame.metadata
+  let base = cursor.nodes + cursor.node * 16
+  cursor.node += 1
+  let rows = bounded_i64(read_i64(metadata, base), limits.max_values_per_batch,
+    "field node length")
+  let nulls = bounded_i64(read_i64(metadata, base + 8), rows, "null count")
+  if expected >= 0 && rows != expected {
+    raise Invalid("field node length differs from parent")
+  }
+  if rows > cursor.remaining_values { raise LimitExceeded("values per batch") }
+  cursor.remaining_values -= rows
+  if field.data_type == Null {
+    if nulls != rows { raise Invalid("Null column null count differs from length") }
+    return Nulls(rows)
+  }
+  let validity = next_body_buffer(frame, cursor)
+  let bitmap_size = rows / 8 + (if rows % 8 != 0 { 1 } else { 0 })
+  if (!validity.is_empty() || nulls > 0) && validity.length() < bitmap_size {
+    raise Invalid("short or missing validity bitmap")
+  }
+  let valid : Array[Bool] = []
+  let mut actual_nulls = 0
+  for j in 0..<rows {
+    let bit = validity.is_empty() ||
+      (validity[j / 8].to_int() & (1 << (j % 8))) != 0
+    valid.push(bit)
+    if !bit { actual_nulls += 1 }
+  }
+  if actual_nulls != nulls { raise Invalid("null count does not match validity bitmap") }
+  if field.data_type == List {
+    if field.children.length() != 1 { raise Invalid("List requires one child") }
+    let offsets_bytes = next_body_buffer(frame, cursor)
+    if rows >= offsets_bytes.length() / 4 { raise Invalid("short List offsets") }
+    let offsets = []
+    let mut previous = read_i32(offsets_bytes, 0)
+    if previous < 0 { raise Invalid("negative List offset") }
+    offsets.push(previous)
+    for i in 0..<rows {
+      let current = read_i32(offsets_bytes, (i + 1) * 4)
+      if current < previous { raise Invalid("non-monotonic List offsets") }
+      offsets.push(current)
+      previous = current
+    }
+    let child = decode_column(frame, field.children[0], -1, cursor, limits, depth + 1)
+    if previous > child.length() { raise Invalid("List offset exceeds child length") }
+    return Lists(offsets, valid, child)
+  }
+  if field.data_type == Struct {
+    let children = []
+    for child_field in field.children {
+      children.push(decode_column(frame, child_field, rows, cursor, limits, depth + 1))
+    }
+    return Structs(valid, children)
+  }
+  let values = next_body_buffer(frame, cursor)
+  match field.data_type {
+    Null => Column::Nulls(rows)
+    Boolean => {
+      if values.length() < bitmap_size {
+        raise Invalid("short boolean bitmap")
+      }
+      Booleans(
+        Array::makei(rows, j => {
+          if valid[j] {
+            Some((values[j / 8].to_int() & (1 << (j % 8))) != 0)
+          } else {
+            None
+          }
+        }),
+      )
+    }
+    Int8 | Int16 | UInt8 | UInt16 | UInt32 | UInt64 | Float32 => {
+      let width = match field.data_type {
+        Int8 | UInt8 => 1
+        Int16 | UInt16 => 2
+        UInt32 | Float32 => 4
+        _ => 8
+      }
+      if rows > values.length() / width {
+        raise Invalid("short fixed-width buffer")
+      }
+      match field.data_type {
+        Int8 => Int8s(Array::makei(rows, j => if valid[j] {
+          Some(signed_fixed(read_fixed(values, j * width, width), width))
+        } else { None }))
+        Int16 => Int16s(Array::makei(rows, j => if valid[j] {
+          Some(signed_fixed(read_fixed(values, j * width, width), width))
+        } else { None }))
+        UInt8 => UInt8s(Array::makei(rows, j => if valid[j] {
+          Some(read_fixed(values, j * width, width).to_int())
+        } else { None }))
+        UInt16 => UInt16s(Array::makei(rows, j => if valid[j] {
+          Some(read_fixed(values, j * width, width).to_int())
+        } else { None }))
+        UInt32 => UInt32s(Array::makei(rows, j => if valid[j] {
+          Some(read_i32(values, j * width).reinterpret_as_uint())
+        } else { None }))
+        UInt64 => UInt64s(Array::makei(rows, j => if valid[j] {
+          Some(read_i64(values, j * width).reinterpret_as_uint64())
+        } else { None }))
+        Float32 => Float32s(Array::makei(rows, j => if valid[j] {
+          Some(Float::reinterpret_from_int(read_i32(values, j * width)))
+        } else { None }))
+        _ => raise Invalid("internal fixed-width type")
+      }
+    }
+    Int32 => {
+      if rows > values.length() / 4 {
+        raise Invalid("short Int32 buffer")
+      }
+      let result = []
+      for j in 0..<rows {
+        result.push(
+          if valid[j] {
+            Some(read_i32(values, j * 4))
+          } else {
+            None
+          },
+        )
+      }
+      Int32s(result)
+    }
+    Int64 => {
+      if rows > values.length() / 8 {
+        raise Invalid("short Int64 buffer")
+      }
+      let result = []
+      for j in 0..<rows {
+        result.push(
+          if valid[j] {
+            Some(read_i64(values, j * 8))
+          } else {
+            None
+          },
+        )
+      }
+      Int64s(result)
+    }
+    Float64 => {
+      if rows > values.length() / 8 {
+        raise Invalid("short Float64 buffer")
+      }
+      let result = []
+      for j in 0..<rows {
+        result.push(
+          if valid[j] {
+            Some(read_i64(values, j * 8).reinterpret_as_double())
+          } else {
+            None
+          },
+        )
+      }
+      Float64s(result)
+    }
+    Date32 => {
+      if rows > values.length() / 4 { raise Invalid("short Date32 buffer") }
+      Date32s(Array::makei(rows, j => if valid[j] {
+        Some(read_i32(values, j * 4))
+      } else { None }))
+    }
+    Date64 | Timestamp(_, _) | Duration(_) => {
+      if rows > values.length() / 8 { raise Invalid("short temporal buffer") }
+      let result = Array::makei(rows, j => if valid[j] {
+        Some(read_i64(values, j * 8))
+      } else { None })
+      match field.data_type {
+        Date64 => Date64s(result)
+        Timestamp(unit, timezone) => Timestamps(result, unit, timezone)
+        Duration(unit) => Durations(result, unit)
+        _ => raise Invalid("internal temporal type")
+      }
+    }
+    Utf8 | Binary => {
+      let bytes = next_body_buffer(frame, cursor)
+      if rows >= values.length() / 4 {
+        raise Invalid("short offsets buffer")
+      }
+      let strings = []
+      let binaries = []
+      let mut start = read_i32(values, 0)
+      if start < 0 || start > bytes.length() {
+        raise Invalid("invalid first binary offset")
+      }
+      for j in 0..<rows {
+        let end = read_i32(values, (j + 1) * 4)
+        if end < start || end > bytes.length() {
+          raise Invalid("non-monotonic or out-of-range offset")
+        }
+        if field.data_type == Utf8 {
+          strings.push(
+            if valid[j] {
+              Some(decode_utf8(bytes, start, end - start))
+            } else {
+              None
+            },
+          )
+        } else {
+          binaries.push(
+            if valid[j] {
+              Some(slice_bytes(bytes, start, end - start))
+            } else {
+              None
+            },
+          )
+        }
+        start = end
+      }
+      if field.data_type == Utf8 {
+        Strings(strings)
+      } else {
+        Binaries(binaries)
+      }
+    }
+    List | Struct => raise Invalid("internal nested dispatch")
+  }
+
+}
+
+///|
 fn decode_body(
   frame : Frame,
   schema : Schema,
   limits : ReadLimits,
 ) -> RecordBatch raise ArrowError {
-  if frame.kind != 3 {
-    raise Unsupported("expected RecordBatch message")
-  }
+  if frame.kind != 3 { raise Unsupported("expected RecordBatch message") }
   let metadata = frame.metadata
   let table = frame.header
   if field_ref(metadata, table, 3) is Some(_) {
     raise Unsupported("compressed IPC body")
   }
   let (_, variadic) = vector_info(metadata, table, 4, 8, limits.max_fields)
-  if variadic != 0 {
-    raise Unsupported("variadic buffers")
-  }
-  let rows = bounded_i64(
-    field_long(metadata, table, 0),
-    limits.max_rows_per_batch,
-    "rows per batch",
-  )
-  let count = schema.fields.length()
-  if count > 0 && rows > limits.max_values_per_batch / count {
-    raise LimitExceeded("values per batch")
-  }
-  let (nodes, node_count) = vector_info(
-    metadata,
-    table,
-    1,
-    16,
-    limits.max_fields,
-  )
-  if node_count != count {
-    raise Invalid("field node count differs from schema")
-  }
+  if variadic != 0 { raise Unsupported("variadic buffers") }
+  let rows = bounded_i64(field_long(metadata, table, 0),
+    limits.max_rows_per_batch, "rows per batch")
+  let mut expected_nodes = 0
   let mut expected_buffers = 0
   for field in schema.fields {
-    expected_buffers += match field.data_type {
-      Null => 0
-      Utf8 | Binary => 3
-      _ => 2
-    }
+    let (n, b) = field_layout(field)
+    expected_nodes += n
+    expected_buffers += b
   }
-  let (buffers, buffer_count) = vector_info(
-    metadata, table, 2, 16, expected_buffers,
-  )
-  if buffer_count != expected_buffers {
-    raise Invalid("buffer count differs from schema")
-  }
-  // Bound copied buffers even if malformed metadata aliases the same body range
-  // many times. This is a byte budget, not an exact process-memory limit.
+  if expected_nodes > limits.max_fields { raise LimitExceeded("field node count") }
+  let (nodes, node_count) = vector_info(metadata, table, 1, 16, expected_nodes)
+  if node_count != expected_nodes { raise Invalid("field node count differs from schema") }
+  let (buffers, buffer_count) = vector_info(metadata, table, 2, 16, expected_buffers)
+  if buffer_count != expected_buffers { raise Invalid("buffer count differs from schema") }
   let mut remaining_bytes = limits.max_body_bytes
   for i in 0..<buffer_count {
-    let size = bounded_i64(
-      read_i64(metadata, buffers + i * 16 + 8),
-      remaining_bytes,
-      "total buffer bytes",
-    )
+    let size = bounded_i64(read_i64(metadata, buffers + i * 16 + 8),
+      remaining_bytes, "total buffer bytes")
     remaining_bytes -= size
   }
-  let mut cursor = 0
+  let cursor = BodyCursor::{
+    nodes, node_count, node: 0, buffers, buffer_count, buffer: 0,
+    remaining_values: limits.max_values_per_batch,
+  }
   let columns = []
-  for i in 0..<count {
-    let length = bounded_i64(
-      read_i64(metadata, nodes + i * 16),
-      limits.max_rows_per_batch,
-      "column length",
-    )
-    let nulls = bounded_i64(
-      read_i64(metadata, nodes + i * 16 + 8),
-      rows,
-      "null count",
-    )
-    if length != rows {
-      raise Invalid("field node length differs from batch")
-    }
-    let field = schema.fields[i]
-    if field.data_type == Null {
-      if nulls != rows {
-        raise Invalid("Null column null count differs from length")
-      }
-      columns.push(Column::Nulls(rows))
-      continue
-    }
-    let validity = body_buffer(frame, buffers, cursor)
-    cursor += 1
-    let bitmap_size = rows / 8 + (if rows % 8 != 0 { 1 } else { 0 })
-    if !validity.is_empty() && validity.length() < bitmap_size {
-      raise Invalid("short validity bitmap")
-    }
-    if nulls > 0 && validity.length() < bitmap_size {
-      raise Invalid("missing validity bitmap")
-    }
-    let valid : Array[Bool] = []
-    let mut actual_nulls = 0
-    for j in 0..<rows {
-      let bit = validity.is_empty() ||
-        (validity[j / 8].to_int() & (1 << (j % 8))) != 0
-      valid.push(bit)
-      if !bit {
-        actual_nulls += 1
-      }
-    }
-    if actual_nulls != nulls {
-      raise Invalid("null count does not match validity bitmap")
-    }
-    let values = body_buffer(frame, buffers, cursor)
-    cursor += 1
-    let column = match field.data_type {
-      Null => Column::Nulls(rows)
-      Boolean => {
-        if values.length() < bitmap_size {
-          raise Invalid("short boolean bitmap")
-        }
-        Booleans(
-          Array::makei(rows, j => {
-            if valid[j] {
-              Some((values[j / 8].to_int() & (1 << (j % 8))) != 0)
-            } else {
-              None
-            }
-          }),
-        )
-      }
-      Int8 | Int16 | UInt8 | UInt16 | UInt32 | UInt64 | Float32 => {
-        let width = match field.data_type {
-          Int8 | UInt8 => 1
-          Int16 | UInt16 => 2
-          UInt32 | Float32 => 4
-          _ => 8
-        }
-        if rows > values.length() / width {
-          raise Invalid("short fixed-width buffer")
-        }
-        match field.data_type {
-          Int8 => Int8s(Array::makei(rows, j => if valid[j] {
-            Some(signed_fixed(read_fixed(values, j * width, width), width))
-          } else { None }))
-          Int16 => Int16s(Array::makei(rows, j => if valid[j] {
-            Some(signed_fixed(read_fixed(values, j * width, width), width))
-          } else { None }))
-          UInt8 => UInt8s(Array::makei(rows, j => if valid[j] {
-            Some(read_fixed(values, j * width, width).to_int())
-          } else { None }))
-          UInt16 => UInt16s(Array::makei(rows, j => if valid[j] {
-            Some(read_fixed(values, j * width, width).to_int())
-          } else { None }))
-          UInt32 => UInt32s(Array::makei(rows, j => if valid[j] {
-            Some(read_i32(values, j * width).reinterpret_as_uint())
-          } else { None }))
-          UInt64 => UInt64s(Array::makei(rows, j => if valid[j] {
-            Some(read_i64(values, j * width).reinterpret_as_uint64())
-          } else { None }))
-          Float32 => Float32s(Array::makei(rows, j => if valid[j] {
-            Some(Float::reinterpret_from_int(read_i32(values, j * width)))
-          } else { None }))
-          _ => raise Invalid("internal fixed-width type")
-        }
-      }
-      Int32 => {
-        if rows > values.length() / 4 {
-          raise Invalid("short Int32 buffer")
-        }
-        let result = []
-        for j in 0..<rows {
-          result.push(
-            if valid[j] {
-              Some(read_i32(values, j * 4))
-            } else {
-              None
-            },
-          )
-        }
-        Int32s(result)
-      }
-      Int64 => {
-        if rows > values.length() / 8 {
-          raise Invalid("short Int64 buffer")
-        }
-        let result = []
-        for j in 0..<rows {
-          result.push(
-            if valid[j] {
-              Some(read_i64(values, j * 8))
-            } else {
-              None
-            },
-          )
-        }
-        Int64s(result)
-      }
-      Float64 => {
-        if rows > values.length() / 8 {
-          raise Invalid("short Float64 buffer")
-        }
-        let result = []
-        for j in 0..<rows {
-          result.push(
-            if valid[j] {
-              Some(read_i64(values, j * 8).reinterpret_as_double())
-            } else {
-              None
-            },
-          )
-        }
-        Float64s(result)
-      }
-      Date32 => {
-        if rows > values.length() / 4 { raise Invalid("short Date32 buffer") }
-        Date32s(Array::makei(rows, j => if valid[j] {
-          Some(read_i32(values, j * 4))
-        } else { None }))
-      }
-      Date64 | Timestamp(_, _) | Duration(_) => {
-        if rows > values.length() / 8 { raise Invalid("short temporal buffer") }
-        let result = Array::makei(rows, j => if valid[j] {
-          Some(read_i64(values, j * 8))
-        } else { None })
-        match field.data_type {
-          Date64 => Date64s(result)
-          Timestamp(unit, timezone) => Timestamps(result, unit, timezone)
-          Duration(unit) => Durations(result, unit)
-          _ => raise Invalid("internal temporal type")
-        }
-      }
-      Utf8 | Binary => {
-        let bytes = body_buffer(frame, buffers, cursor)
-        cursor += 1
-        if rows >= values.length() / 4 {
-          raise Invalid("short offsets buffer")
-        }
-        let strings = []
-        let binaries = []
-        let mut start = read_i32(values, 0)
-        if start < 0 || start > bytes.length() {
-          raise Invalid("invalid first binary offset")
-        }
-        for j in 0..<rows {
-          let end = read_i32(values, (j + 1) * 4)
-          if end < start || end > bytes.length() {
-            raise Invalid("non-monotonic or out-of-range offset")
-          }
-          if field.data_type == Utf8 {
-            strings.push(
-              if valid[j] {
-                Some(decode_utf8(bytes, start, end - start))
-              } else {
-                None
-              },
-            )
-          } else {
-            binaries.push(
-              if valid[j] {
-                Some(slice_bytes(bytes, start, end - start))
-              } else {
-                None
-              },
-            )
-          }
-          start = end
-        }
-        if field.data_type == Utf8 {
-          Strings(strings)
-        } else {
-          Binaries(binaries)
-        }
-      }
-    }
-    columns.push(column)
+  for field in schema.fields {
+    columns.push(decode_column(frame, field, rows, cursor, limits, 0))
+  }
+  if cursor.node != node_count || cursor.buffer != buffer_count {
+    raise Invalid("unused field node or buffer")
   }
   RecordBatch::new(schema, columns, num_rows=rows)
 }
