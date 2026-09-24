@@ -7,13 +7,33 @@ pub(all) suberror ArrowError {
 } derive(Debug)
 
 ///|
+/// Resolution of a timestamp or duration. No timezone conversion is implied.
+pub(all) enum TimeUnit {
+  Second
+  Millisecond
+  Microsecond
+  Nanosecond
+} derive(Eq, Debug)
+
+///|
 /// Types supported by the initial IPC implementation.
 pub(all) enum DataType {
   Null
   Boolean
+  Int8
+  Int16
   Int32
   Int64
+  UInt8
+  UInt16
+  UInt32
+  UInt64
+  Float32
   Float64
+  Date32
+  Date64
+  Timestamp(TimeUnit, String?)
+  Duration(TimeUnit)
   Utf8
   Binary
 } derive(Eq, Debug)
@@ -65,9 +85,20 @@ pub fn Schema::new(
 pub(all) enum Column {
   Nulls(Int)
   Booleans(Array[Bool?])
+  Int8s(Array[Int?])
+  Int16s(Array[Int?])
   Int32s(Array[Int?])
   Int64s(Array[Int64?])
+  UInt8s(Array[Int?])
+  UInt16s(Array[Int?])
+  UInt32s(Array[UInt?])
+  UInt64s(Array[UInt64?])
+  Float32s(Array[Float?])
   Float64s(Array[Double?])
+  Date32s(Array[Int?])
+  Date64s(Array[Int64?])
+  Timestamps(Array[Int64?], TimeUnit, String?)
+  Durations(Array[Int64?], TimeUnit)
   Strings(Array[String?])
   Binaries(Array[Bytes?])
 } derive(Debug)
@@ -77,9 +108,20 @@ pub fn Column::length(self : Column) -> Int {
   match self {
     Nulls(n) => n
     Booleans(a) => a.length()
+    Int8s(a) => a.length()
+    Int16s(a) => a.length()
     Int32s(a) => a.length()
     Int64s(a) => a.length()
+    UInt8s(a) => a.length()
+    UInt16s(a) => a.length()
+    UInt32s(a) => a.length()
+    UInt64s(a) => a.length()
+    Float32s(a) => a.length()
     Float64s(a) => a.length()
+    Date32s(a) => a.length()
+    Date64s(a) => a.length()
+    Timestamps(a, _, _) => a.length()
+    Durations(a, _) => a.length()
     Strings(a) => a.length()
     Binaries(a) => a.length()
   }
@@ -90,9 +132,20 @@ pub fn Column::data_type(self : Column) -> DataType {
   match self {
     Nulls(_) => Null
     Booleans(_) => Boolean
+    Int8s(_) => Int8
+    Int16s(_) => Int16
     Int32s(_) => Int32
     Int64s(_) => Int64
+    UInt8s(_) => UInt8
+    UInt16s(_) => UInt16
+    UInt32s(_) => UInt32
+    UInt64s(_) => UInt64
+    Float32s(_) => Float32
     Float64s(_) => Float64
+    Date32s(_) => Date32
+    Date64s(_) => Date64
+    Timestamps(_, unit, timezone) => Timestamp(unit, timezone)
+    Durations(_, unit) => Duration(unit)
     Strings(_) => Utf8
     Binaries(_) => Binary
   }
@@ -103,9 +156,20 @@ fn Column::valid_at(self : Column, i : Int) -> Bool {
   match self {
     Nulls(_) => false
     Booleans(a) => a[i] is Some(_)
+    Int8s(a) => a[i] is Some(_)
+    Int16s(a) => a[i] is Some(_)
     Int32s(a) => a[i] is Some(_)
     Int64s(a) => a[i] is Some(_)
+    UInt8s(a) => a[i] is Some(_)
+    UInt16s(a) => a[i] is Some(_)
+    UInt32s(a) => a[i] is Some(_)
+    UInt64s(a) => a[i] is Some(_)
+    Float32s(a) => a[i] is Some(_)
     Float64s(a) => a[i] is Some(_)
+    Date32s(a) => a[i] is Some(_)
+    Date64s(a) => a[i] is Some(_)
+    Timestamps(a, _, _) => a[i] is Some(_)
+    Durations(a, _) => a[i] is Some(_)
     Strings(a) => a[i] is Some(_)
     Binaries(a) => a[i] is Some(_)
   }
@@ -165,6 +229,14 @@ pub fn RecordBatch::validate(self : RecordBatch) -> Unit raise ArrowError {
     }
     if !field.nullable && column.null_count() != 0 {
       raise Invalid("null in non-nullable field: " + field.name)
+    }
+    match column {
+      Int8s(a) => for v in a { if v is Some(x) && (x < -128 || x > 127) { raise Invalid("Int8 value outside range: " + field.name) } }
+      Int16s(a) => for v in a { if v is Some(x) && (x < -32768 || x > 32767) { raise Invalid("Int16 value outside range: " + field.name) } }
+      UInt8s(a) => for v in a { if v is Some(x) && (x < 0 || x > 255) { raise Invalid("UInt8 value outside range: " + field.name) } }
+      UInt16s(a) => for v in a { if v is Some(x) && (x < 0 || x > 65535) { raise Invalid("UInt16 value outside range: " + field.name) } }
+      Date64s(a) => for v in a { if v is Some(x) && x % 86400000L != 0L { raise Invalid("Date64 must be whole days: " + field.name) } }
+      _ => ()
     }
   }
 }

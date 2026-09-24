@@ -43,6 +43,12 @@ fn encode_body(batch : RecordBatch) -> BodyLayout raise ArrowError {
           }
         }
       }
+      Int8s(a) => for value in a {
+        put_fixed(values, reserve(values, 1), value.unwrap_or(0).to_int64(), 1)
+      }
+      Int16s(a) => for value in a {
+        put_fixed(values, reserve(values, 2), value.unwrap_or(0).to_int64(), 2)
+      }
       Int32s(a) =>
         for value in a {
           put_i32(values, reserve(values, 4), value.unwrap_or(0))
@@ -51,6 +57,21 @@ fn encode_body(batch : RecordBatch) -> BodyLayout raise ArrowError {
         for value in a {
           put_i64(values, reserve(values, 8), value.unwrap_or(0L))
         }
+      UInt8s(a) => for value in a {
+        put_fixed(values, reserve(values, 1), value.unwrap_or(0).to_int64(), 1)
+      }
+      UInt16s(a) => for value in a {
+        put_fixed(values, reserve(values, 2), value.unwrap_or(0).to_int64(), 2)
+      }
+      UInt32s(a) => for value in a {
+        put_i32(values, reserve(values, 4), value.unwrap_or(0U).reinterpret_as_int())
+      }
+      UInt64s(a) => for value in a {
+        put_i64(values, reserve(values, 8), value.unwrap_or(0UL).reinterpret_as_int64())
+      }
+      Float32s(a) => for value in a {
+        put_i32(values, reserve(values, 4), value.unwrap_or(0.0F).reinterpret_as_int())
+      }
       Float64s(a) =>
         for value in a {
           put_i64(
@@ -59,6 +80,15 @@ fn encode_body(batch : RecordBatch) -> BodyLayout raise ArrowError {
             value.unwrap_or(0.0).reinterpret_as_int64(),
           )
         }
+      Date32s(a) => for value in a {
+        put_i32(values, reserve(values, 4), value.unwrap_or(0))
+      }
+      Date64s(a) => for value in a {
+        put_i64(values, reserve(values, 8), value.unwrap_or(0L))
+      }
+      Timestamps(a, _, _) | Durations(a, _) => for value in a {
+        put_i64(values, reserve(values, 8), value.unwrap_or(0L))
+      }
       Strings(_) | Binaries(_) => {
         let offsets : Array[Byte] = []
         put_i32(offsets, reserve(offsets, 4), 0)
@@ -228,6 +258,41 @@ fn decode_body(
           }),
         )
       }
+      Int8 | Int16 | UInt8 | UInt16 | UInt32 | UInt64 | Float32 => {
+        let width = match field.data_type {
+          Int8 | UInt8 => 1
+          Int16 | UInt16 => 2
+          UInt32 | Float32 => 4
+          _ => 8
+        }
+        if rows > values.length() / width {
+          raise Invalid("short fixed-width buffer")
+        }
+        match field.data_type {
+          Int8 => Int8s(Array::makei(rows, j => if valid[j] {
+            Some(signed_fixed(read_fixed(values, j * width, width), width))
+          } else { None }))
+          Int16 => Int16s(Array::makei(rows, j => if valid[j] {
+            Some(signed_fixed(read_fixed(values, j * width, width), width))
+          } else { None }))
+          UInt8 => UInt8s(Array::makei(rows, j => if valid[j] {
+            Some(read_fixed(values, j * width, width).to_int())
+          } else { None }))
+          UInt16 => UInt16s(Array::makei(rows, j => if valid[j] {
+            Some(read_fixed(values, j * width, width).to_int())
+          } else { None }))
+          UInt32 => UInt32s(Array::makei(rows, j => if valid[j] {
+            Some(read_i32(values, j * width).reinterpret_as_uint())
+          } else { None }))
+          UInt64 => UInt64s(Array::makei(rows, j => if valid[j] {
+            Some(read_i64(values, j * width).reinterpret_as_uint64())
+          } else { None }))
+          Float32 => Float32s(Array::makei(rows, j => if valid[j] {
+            Some(Float::reinterpret_from_int(read_i32(values, j * width)))
+          } else { None }))
+          _ => raise Invalid("internal fixed-width type")
+        }
+      }
       Int32 => {
         if rows > values.length() / 4 {
           raise Invalid("short Int32 buffer")
@@ -275,6 +340,24 @@ fn decode_body(
           )
         }
         Float64s(result)
+      }
+      Date32 => {
+        if rows > values.length() / 4 { raise Invalid("short Date32 buffer") }
+        Date32s(Array::makei(rows, j => if valid[j] {
+          Some(read_i32(values, j * 4))
+        } else { None }))
+      }
+      Date64 | Timestamp(_, _) | Duration(_) => {
+        if rows > values.length() / 8 { raise Invalid("short temporal buffer") }
+        let result = Array::makei(rows, j => if valid[j] {
+          Some(read_i64(values, j * 8))
+        } else { None })
+        match field.data_type {
+          Date64 => Date64s(result)
+          Timestamp(unit, timezone) => Timestamps(result, unit, timezone)
+          Duration(unit) => Durations(result, unit)
+          _ => raise Invalid("internal temporal type")
+        }
       }
       Utf8 | Binary => {
         let bytes = body_buffer(frame, buffers, cursor)

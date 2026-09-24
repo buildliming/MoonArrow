@@ -32,12 +32,22 @@ def normalize(schema, batches):
     for batch in batches:
         columns = []
         for field, array in zip(schema, batch.columns):
+            if pa.types.is_date32(field.type):
+                array = array.cast(pa.int32())
+            elif (pa.types.is_date64(field.type) or
+                  pa.types.is_timestamp(field.type) or
+                  pa.types.is_duration(field.type)):
+                array = array.cast(pa.int64())
             values = []
             for scalar in array:
                 value = scalar.as_py()
                 if value is not None:
-                    if pa.types.is_int64(field.type):
+                    if (pa.types.is_int64(field.type) or pa.types.is_uint64(field.type) or
+                        pa.types.is_date64(field.type) or pa.types.is_timestamp(field.type) or
+                        pa.types.is_duration(field.type)):
                         value = str(value)
+                    elif pa.types.is_float32(field.type):
+                        value = str(struct.unpack("<i", struct.pack("<f", value))[0])
                     elif pa.types.is_float64(field.type):
                         value = str(struct.unpack("<q", struct.pack("<d", value))[0])
                     elif pa.types.is_binary(field.type):
@@ -84,6 +94,39 @@ def generated_case(seed, count):
         arrays = [pa.array(v, type=t) for v, t in zip(values, TYPES)]
         batches.append(pa.RecordBatch.from_arrays(arrays, schema=schema))
     return schema, batches
+
+
+def numeric_case():
+    types = [pa.int8(), pa.int16(), pa.uint8(), pa.uint16(),
+             pa.uint32(), pa.uint64(), pa.float32()]
+    values = [
+        [-128, -1, None, 127],
+        [-32768, -1, None, 32767],
+        [0, 255, None, 1],
+        [0, 65535, None, 1],
+        [0, 2**32 - 1, None, 2**31 + 1],
+        [0, 2**64 - 1, None, 2**53 + 1],
+        [0.0, -0.0, None, 1.5],
+    ]
+    schema = pa.schema([pa.field(f"n{i}", typ) for i, typ in enumerate(types)])
+    batch = pa.RecordBatch.from_arrays(
+        [pa.array(v, type=t) for v, t in zip(values, types)], schema=schema
+    )
+    return schema, [batch]
+
+
+def temporal_case():
+    types = [pa.date32(), pa.date64(), pa.timestamp("s"),
+             pa.timestamp("us", tz="UTC"), pa.timestamp("ns", tz="Asia/Shanghai"),
+             pa.duration("ms"), pa.duration("ns")]
+    data = [[0, 1, None, -1], [0, 86400000, None, -86400000],
+            [0, 1, None, -1], [0, 123456789, None, -1],
+            [0, 123456789, None, -1], [0, 1, None, -1],
+            [0, 123456789, None, -1]]
+    schema = pa.schema([pa.field(f"t{i}", typ) for i, typ in enumerate(types)])
+    arrays = [pa.array(v, type=pa.int32() if pa.types.is_date32(t) else pa.int64()).cast(t)
+              for v, t in zip(data, types)]
+    return schema, [pa.RecordBatch.from_arrays(arrays, schema=schema)]
 
 
 def main():
@@ -139,6 +182,14 @@ def main():
         for kind in ["stream", "file"]:
             verify(schema, batches, write_arrow(schema, batches, kind), kind, f"random-{seed}")
 
+    schema, batches = numeric_case()
+    for kind in ["stream", "file"]:
+        verify(schema, batches, write_arrow(schema, batches, kind), kind, "numeric-widths")
+
+    schema, batches = temporal_case()
+    for kind in ["stream", "file"]:
+        verify(schema, batches, write_arrow(schema, batches, kind), kind, "temporal")
+
     schema, batches = generated_case(123, 9)
     for version in [pa.ipc.MetadataVersion.V4, pa.ipc.MetadataVersion.V5]:
         options = pa.ipc.IpcWriteOptions(metadata_version=version, use_legacy_format=True)
@@ -156,8 +207,7 @@ def main():
     for kind in ["stream", "file"]:
         verify(schema, batches, write_arrow(schema, batches, kind), kind, "sliced")
 
-    unsupported = [pa.array([1, 2], type=pa.uint32()), pa.array([[1], [2]]),
-                   pa.array(["a", "b"]).dictionary_encode(), pa.array([1.0, 2.0], type=pa.float32())]
+    unsupported = [pa.array([[1], [2]]), pa.array(["a", "b"]).dictionary_encode()]
     for array in unsupported:
         batch = pa.RecordBatch.from_arrays([array], names=["unsupported"])
         result = call("stream", write_arrow(batch.schema, [batch], "stream"))

@@ -40,6 +40,29 @@ fn read_i64(data : Bytes, p : Int) -> Int64 raise ArrowError {
 }
 
 ///|
+fn read_fixed(data : Bytes, p : Int, width : Int) -> Int64 raise ArrowError {
+  check_range(data, p, width)
+  let mut bits = 0L
+  for i in 0..<width {
+    bits = bits | (data[p + i].to_int().to_int64() << (8 * i))
+  }
+  bits
+}
+
+///|
+fn signed_fixed(value : Int64, width : Int) -> Int {
+  let shift = 64 - width * 8
+  ((value << shift) >> shift).to_int()
+}
+
+///|
+fn put_fixed(out : Array[Byte], p : Int, value : Int64, width : Int) -> Unit {
+  for i in 0..<width {
+    out[p + i] = ((value >> (8 * i)) & 255L).to_byte()
+  }
+}
+
+///|
 fn bounded_i64(
   value : Int64,
   limit : Int,

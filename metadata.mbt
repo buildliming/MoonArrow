@@ -47,23 +47,47 @@ fn encode_schema(out : Array[Byte], schema : Schema) -> Int {
     put_i32(out, pointer, f.pos - pointer)
     fb_ref(out, f, 0, fb_string(out, field.name))
     fb_int(out, f, 1, if field.nullable { 1 } else { 0 })
-    let (tag, width) = match field.data_type {
-      Null => (1, 0)
-      Int32 => (2, 32)
-      Int64 => (2, 64)
-      Float64 => (3, 0)
-      Binary => (4, 0)
-      Utf8 => (5, 0)
-      Boolean => (6, 0)
+    let (tag, width, signed) = match field.data_type {
+      Null => (1, 0, 0)
+      Int8 => (2, 8, 1)
+      Int16 => (2, 16, 1)
+      Int32 => (2, 32, 1)
+      Int64 => (2, 64, 1)
+      UInt8 => (2, 8, 0)
+      UInt16 => (2, 16, 0)
+      UInt32 => (2, 32, 0)
+      UInt64 => (2, 64, 0)
+      Float32 => (3, 1, 0)
+      Float64 => (3, 2, 0)
+      Date32 => (8, 0, 0)
+      Date64 => (8, 1, 0)
+      Timestamp(_, _) => (10, 0, 0)
+      Duration(_) => (18, 0, 0)
+      Binary => (4, 0, 0)
+      Utf8 => (5, 0, 0)
+      Boolean => (6, 0, 0)
     }
     fb_int(out, f, 2, tag)
-    let t = fb_table(out, if tag == 2 { 2 } else if tag == 3 { 1 } else { 0 })
+    let t = fb_table(out, if tag == 2 || tag == 10 { 2 } else if tag == 3 || tag == 8 || tag == 18 { 1 } else { 0 })
     fb_ref(out, f, 3, t.pos)
     if tag == 2 {
       fb_int(out, t, 0, width)
-      fb_int(out, t, 1, 1)
+      fb_int(out, t, 1, signed)
     } else if tag == 3 {
-      fb_int(out, t, 0, 2)
+      fb_int(out, t, 0, width)
+    } else if tag == 8 {
+      fb_int(out, t, 0, width)
+    } else if tag == 10 {
+      if field.data_type is Timestamp(unit, timezone) {
+        fb_int(out, t, 0, time_unit_code(unit))
+        if timezone is Some(name) {
+          fb_ref(out, t, 1, fb_string(out, name))
+        }
+      }
+    } else if tag == 18 {
+      if field.data_type is Duration(unit) {
+        fb_int(out, t, 0, time_unit_code(unit))
+      }
     }
     if !field.metadata.is_empty() {
       fb_ref(out, f, 6, encode_metadata(out, field.metadata))
@@ -114,24 +138,41 @@ fn decode_schema(
     let data_type = match tag {
       1 => DataType::Null
       2 => {
-        if field_int(data, t, 1, 1, 0) != 1 {
-          raise Unsupported("unsigned integers")
-        }
-        match field_int(data, t, 0, 4, 0) {
-          32 => Int32
-          64 => Int64
-          _ => raise Unsupported("integer width (supports 32 and 64)")
+        let signed = field_int(data, t, 1, 1, 0)
+        if signed > 1 { raise Invalid("invalid integer signedness") }
+        match (field_int(data, t, 0, 4, 0), signed) {
+          (8, 1) => Int8
+          (16, 1) => Int16
+          (32, 1) => Int32
+          (64, 1) => Int64
+          (8, 0) => UInt8
+          (16, 0) => UInt16
+          (32, 0) => UInt32
+          (64, 0) => UInt64
+          _ => raise Unsupported("integer width")
         }
       }
-      3 => {
-        if field_int(data, t, 0, 2, 0) != 2 {
-          raise Unsupported("floating-point precision (supports Float64)")
+      3 => match field_int(data, t, 0, 2, 0) {
+        1 => Float32
+        2 => Float64
+        _ => raise Unsupported("floating-point precision")
         }
-        Float64
-      }
       4 => Binary
       5 => Utf8
       6 => Boolean
+      8 => match field_int(data, t, 0, 2, 1) {
+        0 => Date32
+        1 => Date64
+        _ => raise Unsupported("date unit")
+      }
+      10 => Timestamp(
+        decode_time_unit(field_int(data, t, 0, 2, 0)),
+        match field_ref(data, t, 1) {
+          None => None
+          Some(p) => Some(read_string(data, p))
+        },
+      )
+      18 => Duration(decode_time_unit(field_int(data, t, 0, 2, 1)))
       _ => raise Unsupported("Arrow type tag " + tag.to_string())
     }
     fields.push(Field::{
@@ -142,6 +183,27 @@ fn decode_schema(
     })
   }
   { fields, metadata: decode_metadata(data, table, 2, limits), }
+}
+
+///|
+fn time_unit_code(unit : TimeUnit) -> Int {
+  match unit {
+    Second => 0
+    Millisecond => 1
+    Microsecond => 2
+    Nanosecond => 3
+  }
+}
+
+///|
+fn decode_time_unit(code : Int) -> TimeUnit raise ArrowError {
+  match code {
+    0 => Second
+    1 => Millisecond
+    2 => Microsecond
+    3 => Nanosecond
+    _ => raise Unsupported("time unit")
+  }
 }
 
 ///|

@@ -54,14 +54,38 @@ fn metadata_json(entries : Array[@arrow.KeyValue]) -> Json {
 }
 
 ///|
+fn time_unit_string(unit : @arrow.TimeUnit) -> String {
+  match unit {
+    Second => "s"
+    Millisecond => "ms"
+    Microsecond => "us"
+    Nanosecond => "ns"
+  }
+}
+
+///|
 fn schema_json(schema : @arrow.Schema) -> Json {
   let fields = schema.fields.map(field => {
     let kind = match field.data_type {
       Null => "null"
       Boolean => "bool"
+      Int8 => "int8"
+      Int16 => "int16"
       Int32 => "int32"
       Int64 => "int64"
+      UInt8 => "uint8"
+      UInt16 => "uint16"
+      UInt32 => "uint32"
+      UInt64 => "uint64"
+      Float32 => "float"
       Float64 => "double"
+      Date32 => "date32[day]"
+      Date64 => "date64[ms]"
+      Timestamp(unit, timezone) => "timestamp[" + time_unit_string(unit) + (match timezone {
+        Some(s) => ", tz=" + s
+        None => ""
+      }) + "]"
+      Duration(unit) => "duration[" + time_unit_string(unit) + "]"
       Utf8 => "string"
       Binary => "binary"
     }
@@ -88,6 +112,11 @@ fn column_json(column : @arrow.Column) -> Json {
         }
       })
       .to_json()
+    Int8s(a) | Int16s(a) | UInt8s(a) | UInt16s(a) =>
+      a.map(v => match v {
+        Some(x) => x.to_json()
+        None => Json::null()
+      }).to_json()
     Int32s(a) =>
       a
       .map(v => {
@@ -106,6 +135,21 @@ fn column_json(column : @arrow.Column) -> Json {
         }
       })
       .to_json()
+    UInt32s(a) =>
+      a.map(v => match v {
+        Some(x) => x.to_json()
+        None => Json::null()
+      }).to_json()
+    UInt64s(a) =>
+      a.map(v => match v {
+        Some(x) => Json::string(x.to_string())
+        None => Json::null()
+      }).to_json()
+    Float32s(a) =>
+      a.map(v => match v {
+        Some(x) => Json::string(x.reinterpret_as_int().to_string())
+        None => Json::null()
+      }).to_json()
     Float64s(a) =>
       a
       .map(v => {
@@ -115,6 +159,15 @@ fn column_json(column : @arrow.Column) -> Json {
         }
       })
       .to_json()
+    Date32s(a) => a.map(v => match v {
+      Some(x) => x.to_json()
+      None => Json::null()
+    }).to_json()
+    Date64s(a) | Timestamps(a, _, _) | Durations(a, _) =>
+      a.map(v => match v {
+        Some(x) => Json::string(x.to_string())
+        None => Json::null()
+      }).to_json()
     Strings(a) =>
       a
       .map(v => {
