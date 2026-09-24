@@ -29,3 +29,5 @@ jobs:
       - run: python tools/interop.py --target js
       - run: moon info
       - run: moon fmt --check
+      - run: python tools/count_core.py
+      - run: git diff --exit-code -- '*.mbti'
