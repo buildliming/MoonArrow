@@ -35,4 +35,5 @@ jobs:
       - run: python tools/count_core.py --min-effective 4001
       - run: moon run examples/consumer --target native
       - run: python tools/workflow.py --target native
+      - run: python tools/workflow.py --target js
       - run: git diff --exit-code -- '*.mbti'
