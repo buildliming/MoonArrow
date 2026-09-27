@@ -46,3 +46,31 @@ test "dictionary reader budgets stop state growth" {
   }
   assert_true(failed)
 }
+
+///|
+test "stream reader batch schema does not mutate reader state" {
+  let schema = @arrow.Schema::new([@arrow.Field::new("value", Int32)])
+  let batch = @arrow.RecordBatch::new(schema, [Int32s([Some(7)])])
+  let reader = @arrow.StreamReader::new(
+    @arrow.write_stream(schema, [batch, batch]),
+  )
+  guard reader.next() is Some(first) else { fail("missing first batch") }
+  first.schema.fields[0] = @arrow.Field::new("changed", Utf8)
+  assert_eq(reader.schema.fields[0].name, "value")
+  guard reader.next() is Some(second) else { fail("missing second batch") }
+  assert_eq(second.schema.fields[0].name, "value")
+  assert_true(second.columns[0] is Int32s([Some(7)]))
+}
+
+///|
+test "file reader batch schema does not mutate reader state" {
+  let schema = @arrow.Schema::new([@arrow.Field::new("value", Int32)])
+  let batch = @arrow.RecordBatch::new(schema, [Int32s([Some(7)])])
+  let reader = @arrow.FileReader::new(@arrow.write_file(schema, [batch, batch]))
+  let first = reader.get_batch(0)
+  first.schema.fields[0] = @arrow.Field::new("changed", Utf8)
+  assert_eq(reader.schema.fields[0].name, "value")
+  let second = reader.get_batch(1)
+  assert_eq(second.schema.fields[0].name, "value")
+  assert_true(second.columns[0] is Int32s([Some(7)]))
+}

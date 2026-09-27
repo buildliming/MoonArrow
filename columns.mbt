@@ -752,5 +752,5 @@ fn decode_body(
   if cursor.node != node_count || cursor.buffer != buffer_count {
     raise Invalid("unused field node or buffer")
   }
-  RecordBatch::new(schema, columns, num_rows=rows)
+  RecordBatch::new(copy_schema(schema), columns, num_rows=rows)
 }
