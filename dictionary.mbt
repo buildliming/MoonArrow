@@ -45,6 +45,11 @@ fn dictionary_prefix(left : Column, right : Column) -> Bool {
 }
 
 ///|
+fn snapshot_dictionary_values(values : Column) -> Column {
+  values.take_checked(Array::makei(values.length(), i => i))
+}
+
+///|
 fn schema_has_dictionary(schema : Schema) -> Bool {
   for field in schema.fields {
     if field.data_type is Dictionary(_, _, _) {
@@ -91,9 +96,9 @@ fn emit_dictionary_updates(
         layout.body,
       )
       if slot >= 0 {
-        entries[slot] = { id, values, }
+        entries[slot] = { id, values: snapshot_dictionary_values(values), }
       } else {
-        entries.push({ id, values, })
+        entries.push({ id, values: snapshot_dictionary_values(values), })
       }
     }
   }

@@ -82,3 +82,53 @@ test "incremental file writer produces indexed multi-batch file" {
   assert_eq(reader.num_batches(), 2)
   assert_true(reader.get_batch(1).columns[0] is Strings([Some("b")]))
 }
+
+///|
+test "incremental stream writer snapshots dictionary state" {
+  let schema = @arrow.Schema::new([
+    @arrow.Field::new("category", Dictionary(0L, Utf8, false)),
+  ])
+  let values = [Some("before")]
+  let batch = @arrow.RecordBatch::new(schema, [
+    Dictionaries([Some(0)], Strings(values), 0L, false),
+  ])
+  let writer = @arrow.IncrementalWriter::new(schema)
+  let header = writer.start()
+  let first = writer.write_batch(batch)
+  values[0] = Some("after")
+  let second = writer.write_batch(batch)
+  let decoded = @arrow.read_stream(header + first + second + writer.finish())
+  assert_true(
+    decoded.batches[0].columns[0]
+    is Dictionaries(_, Strings([Some("before")]), _, _),
+  )
+  assert_true(
+    decoded.batches[1].columns[0]
+    is Dictionaries(_, Strings([Some("after")]), _, _),
+  )
+}
+
+///|
+test "incremental file writer snapshots dictionary state" {
+  let schema = @arrow.Schema::new([
+    @arrow.Field::new("category", Dictionary(0L, Utf8, false)),
+  ])
+  let values = [Some("before")]
+  let first_batch = @arrow.RecordBatch::new(schema, [
+    Dictionaries([Some(0)], Strings(values), 0L, false),
+  ])
+  let second_batch = @arrow.RecordBatch::new(schema, [
+    Dictionaries([Some(0)], Strings([Some("before")]), 0L, false),
+  ])
+  let writer = @arrow.FileWriter::new(schema)
+  let header = writer.start()
+  let first = writer.write_batch(first_batch)
+  values[0] = Some("after")
+  let second = writer.write_batch(second_batch)
+  let decoded = @arrow.read_file(header + first + second + writer.finish())
+  assert_eq(decoded.batches.length(), 2)
+  assert_true(
+    decoded.batches[1].columns[0]
+    is Dictionaries(_, Strings([Some("before")]), _, _),
+  )
+}

@@ -68,7 +68,7 @@ fn FileWriter::append_dictionary(
     body_size: layout.body.length(),
   })
   write_frame(out, metadata, layout.body)
-  self.dictionaries.push({ id, values, })
+  self.dictionaries.push({ id, values: snapshot_dictionary_values(values), })
 }
 
 ///|
