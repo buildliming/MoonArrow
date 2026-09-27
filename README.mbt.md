@@ -78,9 +78,14 @@ moon run cmd/main --target native
 对应 IPC file。`StreamReader::next()` 每次解码一个批次，结束时返回 `None`，
 解析报错后也进入结束状态。`FileReader::get_batch(index)` 按 footer 索引读取指定批次。
 `StreamReader` 和 `FileReader` 保留完整输入 Bytes。
-`IncrementalReader::push` 则可接受任意切分的 stream 数据块，返回已完成的批次；
-最后调用 `finish()` 检查截断。`IncrementalWriter` 与 `FileWriter` 分段返回
-`Bytes`。这几个 API 都不执行文件或网络 I/O，传输与落盘由调用方负责。
+`IncrementalReader::push` 接受任意切分的 stream 字节块，复制尚未处理完的帧，
+返回拥有数据的已完成批次；`schema()` 返回防御性副本。输入结束后调用
+`finish()` 检查截断；完整消息边界处即使没有 EOS 标记也可正常结束。
+解析或结束检查出错后需创建新 reader，正常结束后不能再推入非空数据。
+`IncrementalWriter` 与 `FileWriter` 都按 `start()`、逐批 `write_batch()`、
+`finish()` 的顺序返回 `Bytes`，调用方按顺序写入目标。它们复制传入的 schema；
+stream writer 保留字典状态，file writer 还保留 footer 索引。批次写入或收尾失败后
+需创建新 writer。这些 API 都不执行文件或网络 I/O，传输与落盘由调用方负责。
 
 `BatchBuilder::append_row` 接受按 schema 顺序排列的 `Value?`；
 `Table::filter_where` 使用类型化 `Predicate`，空值在 `Eq/Ne` 中均不匹配。

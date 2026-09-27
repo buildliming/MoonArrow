@@ -18,6 +18,20 @@ owned results must not share mutable arrays with input batches.
 `ArrowError::Invalid` means malformed data or invalid user input,
 `Unsupported` means a well-formed Arrow feature outside this implementation,
 and `LimitExceeded` means a configured resource budget was crossed. Public
-readers may retain an entire `Bytes` input; they are not file or network I/O
-adapters. A future incremental API must have its own ownership and terminal
-state contract.
+`StreamReader` and `FileReader` retain the complete input `Bytes`; they are not
+file or network I/O adapters. `IncrementalReader::push` copies incoming bytes
+into a pending frame and returns decoded batches that own their data. The reader
+retains its schema, at most the pending frame, and active dictionaries rather
+than all completed input. `schema()` returns a defensive copy. Call `finish()`
+after the final chunk: EOF at a complete message boundary is valid without an
+EOS marker, while a partial frame is an error. A parsing or final-EOF error
+makes the reader terminal; after EOS or successful `finish()`, it rejects
+nonempty input.
+
+`IncrementalWriter` and `FileWriter` copy their schema at construction. Call
+`start()`, then `write_batch()` for each batch, then `finish()`, and send the
+returned `Bytes` chunks to a caller-owned sink in that order. The stream writer
+retains dictionary state; the file writer retains dictionary state and footer
+indices. Neither retains completed batches or performs file or network I/O.
+Calls out of order raise `Invalid`; a failed batch write or finalization leaves
+the writer unusable, so create a new one to retry.
