@@ -201,9 +201,9 @@ pub fn Table::get_row(
   }
   let mut remaining = index
   for i in 0..<self.num_batches() {
-    let batch = self.get_batch(i)
+    let batch = self.batches[i]
     if remaining < batch.num_rows {
-      return batch.get_row(remaining)
+      return batch.row_unchecked(remaining)
     }
     remaining -= batch.num_rows
   }

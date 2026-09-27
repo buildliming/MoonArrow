@@ -21,3 +21,45 @@ test "scalar access resolves nested maps and builder can append batches" {
   )
   assert_true(decoded.batches[0].get_row(0)[0] is Some(MapValue(_)))
 }
+
+///|
+test "table scalar access crosses empty batches and keeps owned nullable rows" {
+  let schema = @arrow.Schema::new([
+    @arrow.Field::new("id", Int32),
+    @arrow.Field::new("name", Utf8),
+  ])
+  let ids : Array[Int?] = [Some(1), None]
+  let names : Array[String?] = [None, Some("moon")]
+  let empty = @arrow.RecordBatch::new(schema, [Int32s([]), Strings([])])
+  let first = @arrow.RecordBatch::new(schema, [Int32s(ids), Strings(names)])
+  let last = @arrow.RecordBatch::new(schema, [
+    Int32s([Some(3)]),
+    Strings([Some("arrow")]),
+  ])
+  let table = @arrow.Table::new(schema, [empty, first, empty, last])
+  ids[0] = Some(99)
+  names[1] = Some("changed")
+  assert_true(table.get_row(0) is [Some(Int32Value(1)), None])
+  assert_true(table.get_row(1) is [None, Some(Utf8Value("moon"))])
+  assert_true(
+    table.get_row(2) is [Some(Int32Value(3)), Some(Utf8Value("arrow"))],
+  )
+  assert_true(
+    try {
+      ignore(table.get_row(-1))
+      false
+    } catch {
+      @arrow.ArrowError::Invalid(_) => true
+      _ => false
+    },
+  )
+  assert_true(
+    try {
+      ignore(table.get_row(3))
+      false
+    } catch {
+      @arrow.ArrowError::Invalid(_) => true
+      _ => false
+    },
+  )
+}
