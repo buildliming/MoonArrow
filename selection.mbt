@@ -119,18 +119,31 @@ pub fn Table::take_rows(
   indices : Array[Int],
 ) -> Table raise ArrowError {
   let selected = []
+  let mut source_batch = -1
+  let mut local_indices : Array[Int] = []
   for index in indices {
     if index < 0 || index >= self.num_rows() {
       raise Invalid("table row index out of range")
     }
     let mut row_index = index
-    for batch in self.batches {
+    for i in 0..<self.batches.length() {
+      let batch = self.batches[i]
       if row_index < batch.num_rows {
-        selected.push(batch.take([row_index]))
+        if source_batch != i {
+          if source_batch >= 0 {
+            selected.push(self.batches[source_batch].take(local_indices))
+          }
+          source_batch = i
+          local_indices = []
+        }
+        local_indices.push(row_index)
         break
       }
       row_index -= batch.num_rows
     }
+  }
+  if source_batch >= 0 {
+    selected.push(self.batches[source_batch].take(local_indices))
   }
   Table::new(self.schema, selected)
 }
