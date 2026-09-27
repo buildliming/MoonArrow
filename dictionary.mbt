@@ -123,7 +123,7 @@ fn dictionary_value(
   if index < 0 {
     raise Invalid("dictionary referenced before definition")
   }
-  entries[index].values
+  snapshot_dictionary_values(entries[index].values)
 }
 
 ///|

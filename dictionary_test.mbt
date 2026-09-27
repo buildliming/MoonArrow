@@ -76,3 +76,50 @@ test "dictionary rejects out-of-range indices" {
   }
   assert_true(failed)
 }
+
+///|
+test "stream reader dictionary state is isolated from returned batches" {
+  let schema = @arrow.Schema::new([
+    @arrow.Field::new("category", Dictionary(0L, Utf8, false)),
+  ])
+  let batch = @arrow.RecordBatch::new(schema, [
+    Dictionaries([Some(0)], Strings([Some("original")]), 0L, false),
+  ])
+  let reader = @arrow.StreamReader::new(
+    @arrow.write_stream(schema, [batch, batch]),
+  )
+  guard reader.next() is Some(first) else { fail("missing first batch") }
+  guard first.columns[0] is Dictionaries(_, Strings(values), _, _) else {
+    fail("missing dictionary values")
+  }
+  values[0] = Some("changed")
+  guard reader.next() is Some(second) else { fail("missing second batch") }
+  assert_true(
+    second.columns[0] is Dictionaries(_, Strings([Some("original")]), _, _),
+  )
+  assert_true(reader.next() is None)
+}
+
+///|
+test "file reader dictionary state is isolated from returned batches" {
+  let schema = @arrow.Schema::new([
+    @arrow.Field::new("category", Dictionary(0L, Utf8, false)),
+  ])
+  let batch = @arrow.RecordBatch::new(schema, [
+    Dictionaries([Some(0)], Strings([Some("original")]), 0L, false),
+  ])
+  let reader = @arrow.FileReader::new(@arrow.write_file(schema, [batch, batch]))
+  let first = reader.get_batch(0)
+  guard first.columns[0] is Dictionaries(_, Strings(values), _, _) else {
+    fail("missing dictionary values")
+  }
+  values[0] = Some("changed")
+  assert_true(
+    reader.get_batch(0).columns[0]
+    is Dictionaries(_, Strings([Some("original")]), _, _),
+  )
+  assert_true(
+    reader.get_batch(1).columns[0]
+    is Dictionaries(_, Strings([Some("original")]), _, _),
+  )
+}
