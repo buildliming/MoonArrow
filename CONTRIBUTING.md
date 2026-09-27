@@ -21,6 +21,14 @@ moon fmt --check
 git diff --check
 ```
 
+For a complete source-tree check, run `python tools/verify.py` after installing
+`tools/requirements-interop.txt`. It runs the tests, interoperability checks,
+workflows, consumer, interface and format checks, and records command output,
+versions and exit codes in the ignored `outputs/validation.json`. The script
+stops on the first failure and writes the partial report before returning a
+nonzero exit status. Benchmarks remain separate because their timings require
+a controlled local environment.
+
 For a new Arrow type, update the public data model, schema codec, buffer layout,
 malformed-input checks, independent PyArrow fixtures and support matrix together.
 Use stable assertions for decoded values. For floats, compare bit patterns when

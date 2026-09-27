@@ -51,6 +51,16 @@ Dictionary、List、Struct、Map。PyArrow 创建输入文件并验证 MoonBit �
 
 ## 验证与基准
 
+安装 `tools/requirements-interop.txt` 后，可一次运行四后端测试、Native/JS
+互操作与文件工作流、接口和格式检查，并把逐项结果保存到 Git 忽略的
+`outputs/validation.json`：
+
+```sh
+python tools/verify.py
+```
+
+也可单独运行：
+
 ```sh
 python tools/interop.py --target native
 python tools/interop.py --target js
@@ -59,7 +69,7 @@ python -m pip install -r tools/requirements-bench.txt
 python tools/bench.py --target native --output bench/native-local.json
 ```
 
-本地 2026-09-24 验证记录、原始 Native/JS 基准和测量限制见
+本地 2026-09-24 基线、2026-09-27 全量复核、原始 Native/JS 基准和测量限制见
 [验证记录](docs/VALIDATION.md)。核心代码按仓库内可复现脚本统计；
 行数是实施规模指标，功能和正确性仍以测试及独立互操作为准。
 

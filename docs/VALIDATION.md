@@ -26,6 +26,34 @@ driver's assertion count **per target**, not 128 distinct real-world datasets.
 The two workflows use real files but pass their small contents to MoonBit as
 hex command-line arguments. They are integration examples, not large-file I/O.
 
+## 2026-09-27 hardening verification
+
+On Windows 11, `python tools/verify.py` passed all 14 checks and wrote the
+machine-readable command log to `outputs/validation.json` (ignored by Git).
+The local versions were moon 0.1.20260827, moonc 0.10.11+6ff76a5f9,
+Python 3.13.9, Node.js 24.15.0 and PyArrow 21.0.0. Reproduce from a clean
+checkout after installing `tools/requirements-interop.txt`:
+
+```sh
+python tools/verify.py --report outputs/validation.json
+```
+
+| Check | Local result |
+| --- | --- |
+| `moon check --target all --deny-warn` | Passed |
+| `moon test --target all` | 50/50 passed on each of native, js, wasm and wasm-gc |
+| PyArrow interoperability | 128 assertions passed on Native and 128 on JS |
+| File workflows | Both scenarios passed on Native and JS |
+| Independent consumer, `moon info`, `moon fmt --check`, interface and whitespace diffs | Passed |
+| Core source count | 5,126 effective production lines; 5,665 physical lines |
+
+`moon coverage analyze -p shunge/arrow -- -f summary` reported 1,851/3,051
+instrumented points covered (60.7%), up from 1,788/3,035 (58.9%) before these
+changes. This remains below the project's proposed 85% internal target. The
+report covers the local test run, not external Arrow integration suites or
+remote CI. The September 24 throughput measurements below predate these
+changes and are not evidence of a speedup from the Table access changes.
+
 ## Reproducible debug-build benchmark
 
 Raw data: [Native](../bench/native-windows-2026-09-24.json) and

@@ -2,6 +2,12 @@
 
 ## Unreleased — ecosystem build-out
 
+- Isolated stream/file reader schemas and dictionary values from mutable
+  returned batches, and snapshotted dictionary state in incremental writers.
+- Avoided whole-batch copies for single-row Table access and grouped adjacent
+  selections from the same source batch.
+- Added a reproducible full verification report, kept Python interoperability
+  checks active under `-O`, and added the JS file workflow to CI.
 - Added numeric widths, temporal types, large/fixed binary, recursive List,
   LargeList, FixedSizeList, Struct and Map IPC layouts.
 - Added top-level Int32-index Utf8/Binary dictionaries, stream replacement and
