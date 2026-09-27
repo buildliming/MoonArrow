@@ -21,6 +21,11 @@ ROOT = Path(__file__).resolve().parents[1]
 TYPES = [pa.null(), pa.bool_(), pa.int32(), pa.int64(), pa.float64(), pa.string(), pa.binary()]
 
 
+def require(condition, detail):
+    if not condition:
+        raise AssertionError(detail)
+
+
 def json_nested(value):
     if isinstance(value, tuple):
         return [json_nested(v) for v in value]
@@ -241,12 +246,14 @@ def main():
     def verify(schema, batches, raw, kind, label):
         nonlocal checks
         result = call(kind, raw)
-        assert "error" not in result, (label, result)
+        require("error" not in result, (label, result))
         expected = normalize(schema, batches)
-        assert result["data"] == expected, (label, "MoonBit decoded data differs", result["data"], expected)
+        require(result["data"] == expected,
+                (label, "MoonBit decoded data differs", result["data"], expected))
         for output_kind in ["stream", "file"]:
             rewritten = bytes.fromhex(result[output_kind])
-            assert read_arrow(rewritten, output_kind) == expected, (label, output_kind, "PyArrow roundtrip differs")
+            require(read_arrow(rewritten, output_kind) == expected,
+                    (label, output_kind, "PyArrow roundtrip differs"))
             checks += 1
         checks += 1
         if args.fixtures_dir:
@@ -254,10 +261,11 @@ def main():
             (args.fixtures_dir / f"{label}.{kind}").write_bytes(raw)
 
     sample = call("sample")
-    assert "error" not in sample, sample
+    require("error" not in sample, sample)
     for kind in ["stream", "file"]:
         raw = bytes.fromhex(sample[kind])
-        assert read_arrow(raw, kind) == sample["data"], ("MoonBit-origin sample", kind)
+        require(read_arrow(raw, kind) == sample["data"],
+                ("MoonBit-origin sample", kind))
         checks += 1
         if args.fixtures_dir:
             args.fixtures_dir.mkdir(parents=True, exist_ok=True)
@@ -303,9 +311,11 @@ def main():
     schema, batches = dictionary_replacement_case()
     raw = write_arrow(schema, batches, "stream")
     result = call("stream", raw)
-    assert result["data"] == normalize(schema, batches), ("dictionary replacement", result)
-    assert read_arrow(bytes.fromhex(result["stream"]), "stream") == normalize(schema, batches)
-    assert result["file"] is None
+    require(result["data"] == normalize(schema, batches),
+            ("dictionary replacement", result))
+    require(read_arrow(bytes.fromhex(result["stream"]), "stream") == normalize(schema, batches),
+            ("dictionary replacement stream", result))
+    require(result["file"] is None, ("dictionary replacement file", result))
     checks += 3
 
     schema, batches = generated_case(123, 9)
@@ -329,7 +339,7 @@ def main():
     for array in unsupported:
         batch = pa.RecordBatch.from_arrays([array], names=["unsupported"])
         result = call("stream", write_arrow(batch.schema, [batch], "stream"))
-        assert "error" in result, ("unsupported type accepted", array.type)
+        require("error" in result, ("unsupported type accepted", array.type))
         checks += 1
 
     schema, batches = generated_case(999, 31)
@@ -337,7 +347,7 @@ def main():
         if pa.Codec.is_available(codec):
             options = pa.ipc.IpcWriteOptions(compression=codec)
             result = call("stream", write_arrow(schema, batches, "stream", options))
-            assert "error" in result, ("compressed body accepted", codec)
+            require("error" in result, ("compressed body accepted", codec))
             checks += 1
 
     print(f"PASS: {checks} independent interoperability assertions; PyArrow {pa.__version__}; target={args.target}")
