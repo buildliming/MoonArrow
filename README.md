@@ -5,11 +5,11 @@ FFI 依赖，可在 Native、JavaScript、Wasm、Wasm-GC 后端构建和测试�
 项目模块为 `shunge/arrow`，适合在 MoonBit 程序与 Python 等数据工具之间
 交换列式批次。
 
-> 当前仓库是 **0.1.0 之后的未发布开发版本**。Mooncakes 上的 `0.1.0`
-> 只有初始七种基础类型；本页的新功能需从本仓库源码使用。它是 Arrow IPC
-> 的明确子集，不代表完整 Arrow 规范实现。
+> 本文对应 **0.2.1**。旧版 `0.1.0` 只有初始七种基础类型；使用本页能力请
+> 选择 `shunge/arrow@0.2.1`。它是 Arrow IPC 的明确子集，不代表完整 Arrow
+> 规范实现。升级注意事项见[迁移指南](docs/MIGRATION.md)。
 
-## 当前开发版能力
+## 0.2.1 能力
 
 | 领域 | 范围 |
 | --- | --- |
@@ -25,7 +25,8 @@ FFI 依赖，可在 Native、JavaScript、Wasm、Wasm-GC 后端构建和测试�
 
 ## 开始使用
 
-安装 [MoonBit 工具链](https://www.moonbitlang.com/download/) 后，在仓库根目录运行：
+安装 [MoonBit 工具链](https://www.moonbitlang.com/download/) 0.10.14
+（CI 固定 `0.10.14+7d59c7ec9` 及配套 core）后，在仓库根目录运行：
 
 ```sh
 moon run examples/consumer --target native
@@ -34,8 +35,11 @@ moon test --target all
 ```
 
 `examples/consumer` 是独立 MoonBit 模块，借助 `moon.work` 从本地源码依赖
-`shunge/arrow`，只调用公开 API。0.1.0 已发布能力可以通过
-`moon add shunge/arrow@0.1.0` 安装；开发版扩展尚未发布到 Mooncakes。
+`shunge/arrow`，只调用公开 API。在其他项目中使用本版：
+
+```sh
+moon add shunge/arrow@0.2.1
+```
 
 真实 `.arrow` 文件的两个小型端到端工作流：
 
@@ -52,7 +56,8 @@ Dictionary、List、Struct、Map。PyArrow 创建输入文件并验证 MoonBit �
 ## 验证与基准
 
 安装 `tools/requirements-interop.txt` 后，可一次运行四后端测试、Native/JS
-互操作与文件工作流、接口和格式检查，并把逐项结果保存到 Git 忽略的
+互操作与文件工作流、接口和格式检查，以及发布包解压后的独立验证，
+并把逐项结果保存到 Git 忽略的
 `outputs/validation.json`：
 
 ```sh
@@ -69,7 +74,7 @@ python -m pip install -r tools/requirements-bench.txt
 python tools/bench.py --target native --output bench/native-local.json
 ```
 
-本地 2026-09-24 基线、2026-09-27 全量复核、原始 Native/JS 基准和测量限制见
+本地基线、0.2.1 发布验证、原始 Native/JS 基准和测量限制见
 [验证记录](docs/VALIDATION.md)。核心代码按仓库内可复现脚本统计；
 行数是实施规模指标，功能和正确性仍以测试及独立互操作为准。
 

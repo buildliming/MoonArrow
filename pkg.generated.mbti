@@ -24,6 +24,7 @@ pub(all) suberror ArrowError {
   Unsupported(String)
   LimitExceeded(String)
 } derive(@debug.Debug)
+pub fn ArrowError::to_repr(Self) -> @debug.Repr
 
 // Types and methods
 pub struct BatchBuilder {
@@ -71,6 +72,7 @@ pub fn Column::null_count(Self) -> Int
 pub fn Column::slice(Self, Int, Int) -> Self raise ArrowError
 pub fn Column::summary(Self) -> ColumnSummary
 pub fn Column::take(Self, Array[Int]) -> Self raise ArrowError
+pub fn Column::to_repr(Self) -> @debug.Repr
 
 pub(all) enum ColumnRange {
   NoRange
@@ -83,6 +85,7 @@ pub(all) enum ColumnRange {
   ByteLengthRange(Int, Int, Int64)
   BooleanCounts(Int, Int)
 } derive(@debug.Debug)
+pub fn ColumnRange::to_repr(Self) -> @debug.Repr
 
 pub(all) struct ColumnSummary {
   length : Int
@@ -90,6 +93,7 @@ pub(all) struct ColumnSummary {
   range : ColumnRange
 } derive(@debug.Debug)
 pub fn ColumnSummary::combine(Self, Self) -> Self raise ArrowError
+pub fn ColumnSummary::to_repr(Self) -> @debug.Repr
 
 pub(all) enum DataType {
   Null
@@ -120,6 +124,9 @@ pub(all) enum DataType {
   LargeBinary
   FixedSizeBinary(Int)
 } derive(Eq, @debug.Debug)
+pub fn DataType::equal(Self, Self) -> Bool
+pub fn DataType::not_equal(Self, Self) -> Bool
+pub fn DataType::to_repr(Self) -> @debug.Repr
 
 pub(all) struct Field {
   name : String
@@ -128,7 +135,10 @@ pub(all) struct Field {
   metadata : Array[KeyValue]
   children : Array[Field]
 } derive(Eq, @debug.Debug)
+pub fn Field::equal(Self, Self) -> Bool
 pub fn Field::new(String, DataType, nullable? : Bool, metadata? : Array[KeyValue], children? : Array[Self]) -> Self
+pub fn Field::not_equal(Self, Self) -> Bool
+pub fn Field::to_repr(Self) -> @debug.Repr
 
 pub struct FileIndex {
   schema : Schema
@@ -137,6 +147,7 @@ pub struct FileIndex {
 } derive(@debug.Debug)
 pub fn FileIndex::num_batches(Self) -> Int
 pub fn FileIndex::num_dictionaries(Self) -> Int
+pub fn FileIndex::to_repr(Self) -> @debug.Repr
 pub fn FileIndex::total_body_bytes(Self) -> Int64
 
 pub struct FileReader {
@@ -177,12 +188,16 @@ pub struct IpcData {
   schema : Schema
   batches : Array[RecordBatch]
 } derive(@debug.Debug)
+pub fn IpcData::to_repr(Self) -> @debug.Repr
 pub fn IpcData::to_table(Self) -> Table raise ArrowError
 
 pub(all) struct KeyValue {
   key : String
   value : String?
 } derive(Eq, @debug.Debug)
+pub fn KeyValue::equal(Self, Self) -> Bool
+pub fn KeyValue::not_equal(Self, Self) -> Bool
+pub fn KeyValue::to_repr(Self) -> @debug.Repr
 
 pub(all) struct MessageInfo {
   offset : Int
@@ -192,12 +207,16 @@ pub(all) struct MessageInfo {
   rows : Int?
   dictionary_id : Int64?
 } derive(@debug.Debug)
+pub fn MessageInfo::to_repr(Self) -> @debug.Repr
 
 pub(all) enum MessageKind {
   SchemaMessage
   DictionaryMessage
   BatchMessage
 } derive(Eq, @debug.Debug)
+pub fn MessageKind::equal(Self, Self) -> Bool
+pub fn MessageKind::not_equal(Self, Self) -> Bool
+pub fn MessageKind::to_repr(Self) -> @debug.Repr
 
 pub(all) enum Predicate {
   Eq(Int, Value)
@@ -208,6 +227,7 @@ pub(all) enum Predicate {
   Or(Predicate, Predicate)
   Not(Predicate)
 } derive(@debug.Debug)
+pub fn Predicate::to_repr(Self) -> @debug.Repr
 
 pub(all) struct ReadLimits {
   max_rows_per_batch : Int
@@ -221,6 +241,7 @@ pub(all) struct ReadLimits {
   max_dictionary_messages : Int
 } derive(@debug.Debug)
 pub fn ReadLimits::default() -> Self
+pub fn ReadLimits::to_repr(Self) -> @debug.Repr
 
 pub struct RecordBatch {
   schema : Schema
@@ -246,6 +267,7 @@ pub fn RecordBatch::split_rows(Self, Int) -> Array[Self] raise ArrowError
 pub fn RecordBatch::summaries(Self) -> Array[ColumnSummary] raise ArrowError
 pub fn RecordBatch::tail(Self, Int) -> Self raise ArrowError
 pub fn RecordBatch::take(Self, Array[Int]) -> Self raise ArrowError
+pub fn RecordBatch::to_repr(Self) -> @debug.Repr
 pub fn RecordBatch::validate(Self) -> Unit raise ArrowError
 
 pub(all) struct Schema {
@@ -253,11 +275,14 @@ pub(all) struct Schema {
   metadata : Array[KeyValue]
 } derive(Eq, @debug.Debug)
 pub fn Schema::drop_field(Self, Int) -> Self raise ArrowError
+pub fn Schema::equal(Self, Self) -> Bool
 pub fn Schema::field_index(Self, String) -> Int raise ArrowError
 pub fn Schema::new(Array[Field], metadata? : Array[KeyValue]) -> Self
+pub fn Schema::not_equal(Self, Self) -> Bool
 pub fn Schema::num_fields(Self) -> Int
 pub fn Schema::project(Self, Array[Int]) -> Self raise ArrowError
 pub fn Schema::rename(Self, Int, String) -> Self raise ArrowError
+pub fn Schema::to_repr(Self) -> @debug.Repr
 
 pub struct StreamIndex {
   schema : Schema
@@ -266,6 +291,7 @@ pub struct StreamIndex {
 } derive(@debug.Debug)
 pub fn StreamIndex::num_batches(Self) -> Int
 pub fn StreamIndex::num_dictionaries(Self) -> Int
+pub fn StreamIndex::to_repr(Self) -> @debug.Repr
 pub fn StreamIndex::total_body_bytes(Self) -> Int64
 
 pub struct StreamReader {
@@ -313,6 +339,9 @@ pub(all) enum TimeUnit {
   Microsecond
   Nanosecond
 } derive(Eq, @debug.Debug)
+pub fn TimeUnit::equal(Self, Self) -> Bool
+pub fn TimeUnit::not_equal(Self, Self) -> Bool
+pub fn TimeUnit::to_repr(Self) -> @debug.Repr
 
 pub(all) enum Value {
   BooleanValue(Bool)
@@ -341,6 +370,7 @@ pub(all) enum Value {
   StructValue(Array[Value?])
   MapValue(Array[(Value, Value?)])
 } derive(@debug.Debug)
+pub fn Value::to_repr(Self) -> @debug.Repr
 
 // Type aliases
 

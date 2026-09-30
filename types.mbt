@@ -265,6 +265,7 @@ pub fn RecordBatch::new(
 
 ///|
 pub fn RecordBatch::validate(self : RecordBatch) -> Unit raise ArrowError {
+  validate_schema(self.schema)
   if self.num_rows < 0 {
     raise Invalid("negative row count")
   }
@@ -284,49 +285,6 @@ pub fn RecordBatch::validate(self : RecordBatch) -> Unit raise ArrowError {
       raise Invalid("null in non-nullable field: " + field.name)
     }
     validate_nested(field, column, 0)
-    match column {
-      Int8s(a) =>
-        for v in a {
-          if v is Some(x) && (x < -128 || x > 127) {
-            raise Invalid("Int8 value outside range: " + field.name)
-          }
-        }
-      Int16s(a) =>
-        for v in a {
-          if v is Some(x) && (x < -32768 || x > 32767) {
-            raise Invalid("Int16 value outside range: " + field.name)
-          }
-        }
-      UInt8s(a) =>
-        for v in a {
-          if v is Some(x) && (x < 0 || x > 255) {
-            raise Invalid("UInt8 value outside range: " + field.name)
-          }
-        }
-      UInt16s(a) =>
-        for v in a {
-          if v is Some(x) && (x < 0 || x > 65535) {
-            raise Invalid("UInt16 value outside range: " + field.name)
-          }
-        }
-      Date64s(a) =>
-        for v in a {
-          if v is Some(x) && x % 86400000L != 0L {
-            raise Invalid("Date64 must be whole days: " + field.name)
-          }
-        }
-      FixedBinaries(a, width) => {
-        if width <= 0 {
-          raise Invalid("fixed binary width must be positive")
-        }
-        for v in a {
-          if v is Some(bytes) && bytes.length() != width {
-            raise Invalid("fixed binary value width mismatch: " + field.name)
-          }
-        }
-      }
-      _ => ()
-    }
   }
 }
 
@@ -426,6 +384,49 @@ fn validate_nested(
       if !field.children.is_empty() {
         raise Invalid("primitive field has children")
       }
+  }
+  match column {
+    Int8s(a) =>
+      for v in a {
+        if v is Some(x) && (x < -128 || x > 127) {
+          raise Invalid("Int8 value outside range: " + field.name)
+        }
+      }
+    Int16s(a) =>
+      for v in a {
+        if v is Some(x) && (x < -32768 || x > 32767) {
+          raise Invalid("Int16 value outside range: " + field.name)
+        }
+      }
+    UInt8s(a) =>
+      for v in a {
+        if v is Some(x) && (x < 0 || x > 255) {
+          raise Invalid("UInt8 value outside range: " + field.name)
+        }
+      }
+    UInt16s(a) =>
+      for v in a {
+        if v is Some(x) && (x < 0 || x > 65535) {
+          raise Invalid("UInt16 value outside range: " + field.name)
+        }
+      }
+    Date64s(a) =>
+      for v in a {
+        if v is Some(x) && x % 86400000L != 0L {
+          raise Invalid("Date64 must be whole days: " + field.name)
+        }
+      }
+    FixedBinaries(a, width) => {
+      if width <= 0 {
+        raise Invalid("fixed binary width must be positive")
+      }
+      for v in a {
+        if v is Some(bytes) && bytes.length() != width {
+          raise Invalid("fixed binary value width mismatch: " + field.name)
+        }
+      }
+    }
+    _ => ()
   }
 }
 

@@ -145,3 +145,43 @@ test "deterministic malformed byte corpus does not panic" {
     }
   }
 }
+
+///|
+test "nested Date64 wire values must represent whole days" {
+  let schema = Schema::new([
+    Field::new("days", List, children=[Field::new("item", Date64)]),
+  ])
+  let layout = encode_body(
+    RecordBatch::new(schema, [Lists([0, 1], [true], Date64s([Some(86400000L)]))]),
+  )
+  let body = bytes_array(layout.body)
+  let (start, _) = layout.buffers[3]
+  put_i64(body, start, 1L)
+  assert_true(
+    rejects_stream(
+      framed_batch(schema, 1, { ..layout, body: Bytes::from_array(body), }),
+    ),
+  )
+}
+
+///|
+test "file footer metadata version cannot be older than header" {
+  let bytes = write_file(Schema::new([]), [])
+  let footer_size = read_i32(bytes, bytes.length() - 10)
+  let start = bytes.length() - 10 - footer_size
+  let footer = slice_bytes(bytes, start, footer_size)
+  let root = follow_offset(footer, 0)
+  guard table_field(footer, root, 0, 2) is Some(version) else {
+    fail("missing footer version")
+  }
+  let mutated = bytes_array(bytes)
+  put_u16(mutated, start + version, 3)
+  let rejected = try {
+    ignore(read_file(Bytes::from_array(mutated)))
+    false
+  } catch {
+    Invalid(_) => true
+    _ => false
+  }
+  assert_true(rejected)
+}

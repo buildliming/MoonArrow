@@ -11,8 +11,8 @@ test "incremental decoder accepts every single split point" {
   let bytes = @arrow.write_stream(schema, [batch])
   for split in 0..<(bytes.length() + 1) {
     let reader = @arrow.IncrementalReader::new()
-    let first = reader.push(bytes.view(end=split).to_owned())
-    let second = reader.push(bytes.view(start=split).to_owned())
+    let first = reader.push(bytes.exact_view(end=split).to_owned())
+    let second = reader.push(bytes.exact_view(start=split).to_owned())
     reader.finish()
     assert_eq(first.length() + second.length(), 1)
     assert_eq(reader.num_batches(), 1)
@@ -51,7 +51,7 @@ test "incremental decoder rejects a truncated frame at final EOF" {
   let schema = @arrow.Schema::new([])
   let bytes = @arrow.write_stream(schema, [])
   let reader = @arrow.IncrementalReader::new()
-  ignore(reader.push(bytes.view(end=bytes.length() - 1).to_owned()))
+  ignore(reader.push(bytes.exact_view(end=bytes.length() - 1).to_owned()))
   let failed = try {
     reader.finish()
     false

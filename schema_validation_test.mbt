@@ -74,3 +74,60 @@ test "file reader batch schema does not mutate reader state" {
   assert_eq(second.schema.fields[0].name, "value")
   assert_true(second.columns[0] is Int32s([Some(7)]))
 }
+
+///|
+test "batch construction rejects nested dictionary schema" {
+  let schema = @arrow.Schema::new([
+    @arrow.Field::new("items", List, children=[
+      @arrow.Field::new("item", Dictionary(0L, Utf8, false)),
+    ]),
+  ])
+  let rejected = try {
+    ignore(
+      @arrow.RecordBatch::new(schema, [
+        Lists([0], [], Dictionaries([], Strings([]), 0L, false)),
+      ]),
+    )
+    false
+  } catch {
+    @arrow.Unsupported(_) => true
+    _ => false
+  }
+  assert_true(rejected)
+}
+
+///|
+test "batch construction rejects incompatible shared dictionary IDs" {
+  let schema = @arrow.Schema::new([
+    @arrow.Field::new("text", Dictionary(0L, Utf8, false)),
+    @arrow.Field::new("bytes", Dictionary(0L, Binary, false)),
+  ])
+  let rejected = try {
+    ignore(
+      @arrow.RecordBatch::new(schema, [
+        Dictionaries([], Strings([]), 0L, false),
+        Dictionaries([], Binaries([]), 0L, false),
+      ]),
+    )
+    false
+  } catch {
+    @arrow.Invalid(_) => true
+    _ => false
+  }
+  assert_true(rejected)
+}
+
+///|
+test "trait methods remain available through the public API" {
+  let schema = @arrow.Schema::new([@arrow.Field::new("n", Int32)])
+  let same = @arrow.Schema::new([@arrow.Field::new("n", Int32)])
+  let different = @arrow.Schema::new([@arrow.Field::new("n", Int64)])
+  assert_true(schema.equal(same))
+  assert_true(schema.not_equal(different))
+  assert_true(schema.fields[0].equal(same.fields[0]))
+  assert_true(
+    schema.fields[0].data_type.not_equal(different.fields[0].data_type),
+  )
+  ignore(schema.to_repr())
+  ignore(schema.fields[0].to_repr())
+}

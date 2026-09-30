@@ -80,13 +80,13 @@ fn bounded_i64(
 ///|
 fn slice_bytes(data : Bytes, p : Int, size : Int) -> Bytes raise ArrowError {
   check_range(data, p, size)
-  data.view(start=p, end=p + size).to_owned()
+  data.exact_view(start=p, end=p + size).to_owned()
 }
 
 ///|
 fn decode_utf8(data : Bytes, p : Int, n : Int) -> String raise ArrowError {
   check_range(data, p, n)
-  @utf8.decode(data.view(start=p, end=p + n), ignore_bom=false) catch {
+  @utf8.decode(data.exact_view(start=p, end=p + n), ignore_bom=false) catch {
     _ => raise Invalid("invalid UTF-8")
   }
 }

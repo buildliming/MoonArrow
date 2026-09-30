@@ -61,7 +61,7 @@ test "reader reaches EOS repeatedly and accepts clean EOF" {
   assert_true(reader.next() is Some(_))
   assert_true(reader.next() is None)
   assert_true(reader.next() is None)
-  let no_eos = bytes.view(end=bytes.length() - 8).to_owned()
+  let no_eos = bytes.exact_view(end=bytes.length() - 8).to_owned()
   assert_eq(@arrow.read_stream(no_eos).batches.length(), 1)
 }
 
@@ -164,7 +164,7 @@ test "truncation of an IPC file never succeeds" {
   let bytes = @arrow.write_file(batch.schema, [batch])
   for end in 0..<bytes.length() {
     let result = try {
-      ignore(@arrow.read_file(bytes.view(end~).to_owned()))
+      ignore(@arrow.read_file(bytes.exact_view(end~).to_owned()))
       false
     } catch {
       _ => true

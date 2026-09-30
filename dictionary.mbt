@@ -185,6 +185,7 @@ fn decode_dictionary_frame(
   }
   let header = required_ref(frame.metadata, frame.header, 1)
   let batch_frame = Frame::{
+    version: frame.version,
     metadata: frame.metadata,
     header,
     kind: 3,

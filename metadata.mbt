@@ -439,6 +439,7 @@ fn batch_message(rows : Int, layout : BodyLayout) -> Bytes {
 ///|
 priv struct Frame {
   metadata : Bytes
+  version : Int
   header : Int
   kind : Int
   body : Bytes
@@ -510,6 +511,7 @@ fn read_frame(
   }
   Some({
     metadata,
+    version,
     header,
     kind,
     body: slice_bytes(data, body_start, body_size),

@@ -1,7 +1,8 @@
 # Development
 
-Use a MoonBit toolchain supporting `moon.mod` and `moon.pkg`. The initial local
-validation used moon 0.1.20260803; run `moon version --all` when reporting an issue.
+Use MoonBit 0.10.14 (`moonc 0.10.14+7d59c7ec9`, moon 0.1.20260920), the
+fixed toolchain/core version in CI. Earlier local records used 0.10.11;
+run `moon version --all` when reporting an issue.
 Python and PyArrow are test-only dependencies. Node.js is needed for JS execution.
 The repository is a two-member `moon.work` workspace: the library and an
 independent consumer using its public API. Run commands from the workspace root.
@@ -23,11 +24,16 @@ git diff --check
 
 For a complete source-tree check, run `python tools/verify.py` after installing
 `tools/requirements-interop.txt`. It runs the tests, interoperability checks,
-workflows, consumer, interface and format checks, and records command output,
+workflows, consumer, interface and format checks, and validates the extracted
+Mooncakes archive with the same backend tests and external workflows. It records command output,
 versions and exit codes in the ignored `outputs/validation.json`. The script
 stops on the first failure and writes the partial report before returning a
 nonzero exit status. Benchmarks remain separate because their timings require
 a controlled local environment.
+
+To check only the publishable archive, run `python tools/verify_package.py`.
+The temporary extraction stays under `_build/publish` and is removed after
+the run. This check does not access the registry or upload a package.
 
 For a new Arrow type, update the public data model, schema codec, buffer layout,
 malformed-input checks, independent PyArrow fixtures and support matrix together.

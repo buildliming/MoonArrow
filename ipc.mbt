@@ -328,7 +328,10 @@ pub fn FileReader::new(
     Some(frame) => frame
     None => raise Invalid("missing file schema message")
   }
-  if first.kind != 1 ||
+  // PyArrow 21 writes V5 footers even when its stream metadata is V4.
+  // Accept that established form, but reject a footer older than the header.
+  if first.version > version ||
+    first.kind != 1 ||
     decode_schema(first.metadata, first.header, limits) != schema {
     raise Invalid("header/footer schema mismatch")
   }

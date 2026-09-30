@@ -1,6 +1,6 @@
 # MoonArrow IPC format contract
 
-This document describes the unreleased source tree after 0.1.0. The registry's
+This document describes version 0.2.1. The
 0.1.0 release has a smaller type set. MoonArrow is an Arrow IPC subset, not a
 general FlatBuffers or full Arrow implementation.
 
@@ -49,7 +49,9 @@ Stream dictionary replacement and append-only delta messages are handled.
 File dictionaries are indexed by the footer; the writer rejects replacement
 within a file. Unsupported dictionary value types, nested dictionaries, invalid
 IDs and out-of-range indices are checked errors. File reader requires indexed
-blocks and a consistent header/footer schema. It does not accept arbitrary
+blocks and a consistent header/footer schema. A footer cannot advertise an
+older metadata version than the schema message. V4 messages with a V5 footer
+remain supported because PyArrow 21 produces this form. It does not accept arbitrary
 noncontiguous or appended/embedded Arrow files.
 
 `BatchBuilder` accepts typed `Value` rows, verifies field compatibility, and
@@ -58,7 +60,9 @@ project, select, filter, predicates, and schema edits. Table construction and
 append snapshot batch data; returned batches are snapshots. Public Schema,
 Field, Column and RecordBatch arrays remain mutable, so a caller can still
 invalidate an object it directly holds by mutating exposed fields. Writers
-revalidate batches; do not mutate a reader's exposed schema while using it.
+revalidate schemas and all nested column values, including integer ranges,
+whole-day Date64 values and fixed binary widths; do not mutate a reader's
+exposed schema while using it.
 
 ## Limits and errors
 

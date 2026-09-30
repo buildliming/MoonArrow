@@ -2,8 +2,8 @@
 
 `shunge/arrow` 是纯 MoonBit 实现的 Apache Arrow IPC 读写库，让 MoonBit
 程序通过标准列式数据格式与 Python 等数据工具交换数据。
-本仓库为 0.1.0 之后的未发布开发版本，模块名为 `shunge/arrow`。
-Mooncakes 的 0.1.0 仍只有初始功能；以下新能力需从仓库源码使用。
+本文对应 0.2.1，模块名为 `shunge/arrow`。0.1.0 只有初始七种基础类型，
+以下扩展能力请使用 `shunge/arrow@0.2.1`。
 
 生产代码只依赖 MoonBit 标准库，不依赖 PyArrow、Arrow C++ 或 FFI。
 PyArrow 仅用于开发时的独立互操作测试。
@@ -25,10 +25,10 @@ PyArrow 仅用于开发时的独立互操作测试。
 ## 快速示例
 
 以下代码块会由 MoonBit 文档测试执行。在本仓库中运行不需要先发布包。
-在其他 MoonBit 项目中安装已发布的 **0.1.0 子集**：
+在其他 MoonBit 项目中安装 **0.2.1**：
 
 ```sh
-moon add shunge/arrow@0.1.0
+moon add shunge/arrow@0.2.1
 ```
 
 然后在调用方的 `moon.pkg` 中导入 `shunge/arrow`：
@@ -43,7 +43,7 @@ import {
 [GitHub 源码](https://github.com/buildliming/MoonArrow)
 
 本仓库的 `examples/consumer` 是一个独立模块，`moon.work` 将它的
-`shunge/arrow@0.1.0` 依赖解析到本地源码，因此可验证开发版公开 API。
+`shunge/arrow@0.2.1` 依赖解析到本地源码，因此可验证本版公开 API。
 运行 `moon run examples/consumer --target native`。
 
 ```mbt check
@@ -97,7 +97,8 @@ stream writer 保留字典状态，file writer 还保留 footer 索引。批次�
 
 API 抛出 `ArrowError::Invalid`、`Unsupported` 或 `LimitExceeded`。
 读入时检查长度、偏移、位图与空值数量、UTF-8、schema 和批次布局。
-写入前会重新检查数组长度、类型、schema 一致性和非空约束。
+写入前会递归重新检查数组长度、类型、schema 一致性、非空约束、数值范围、
+Date64 整日值及固定二进制宽度；footer 版本不能早于文件头版本。
 公开数组可变；调用方应避免在 reader 使用期间修改其 schema。
 
 可通过 `ReadLimits` 设置每批行数、每批值数、字段数、批次数、元数据字节数、

@@ -1,6 +1,21 @@
 # Changelog
 
-## Unreleased — ecosystem build-out
+## 0.2.1 — 2026-09-30
+
+- Pin CI to MoonBit 0.10.14+7d59c7ec9 and its matching core.
+- Migrate checked byte slices to `exact_view` and explicitly export existing
+  trait methods; generated interfaces now list these methods.
+- Revalidate schemas and scalar values recursively, preventing nested integer
+  truncation and invalid Date64 or fixed binary values from being serialized.
+- Reject Arrow file footers older than their schema message, preserving
+  compatibility with PyArrow's V4 messages and V5 footer.
+- Added regressions for nested value bounds, mutation and malformed wire data;
+  test valid boundary values across all five supported nested containers.
+- Validate the extracted Mooncakes archive on all four backends, including
+  its consumer, PyArrow interoperability and file workflows. CI uses the same
+  verification entry point and uploads its JSON report on success or failure.
+
+## 0.2.0 — Ecosystem build-out
 
 - Isolated stream/file reader schemas and dictionary values from mutable
   returned batches, and snapshotted dictionary state in incremental writers.
@@ -18,9 +33,8 @@
 - Expanded four-backend tests and PyArrow interoperability fixtures; added
   independent consumer, two file workflows, source-line gate and benchmarks.
 
-This is a source-tree changelog. The `moon.mod` version remains 0.1.0 until a
-separate reviewed registry release. New APIs are not available from the
-published 0.1.0 package.
+The expanded APIs require `shunge/arrow@0.2.0` or newer. Exhaustive enum matches and complete
+`ReadLimits` literals may need updates; see [migration](docs/MIGRATION.md).
 
 ## 0.1.0 — Initial implementation
 

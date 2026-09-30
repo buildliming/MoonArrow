@@ -37,6 +37,7 @@ def checks() -> list[tuple[str, list[str]]]:
         ("format", ["moon", "fmt", "--check"]),
         ("interface diff", ["git", "diff", "--exit-code", "--", "*.mbti"]),
         ("whitespace diff", ["git", "diff", "--check"]),
+        ("packaged source", [python, "tools/verify_package.py"]),
     ]
 
 
