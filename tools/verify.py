@@ -32,6 +32,7 @@ def checks() -> list[tuple[str, list[str]]]:
         ("js interop", [python, "tools/interop.py", "--target", "js"]),
         ("native workflow", [python, "tools/workflow.py", "--target", "native"]),
         ("js workflow", [python, "tools/workflow.py", "--target", "js"]),
+        ("UCI Iris workflow", [python, "tools/iris_workflow.py", "--target", "native"]),
         ("core source count", [python, "tools/count_core.py", "--min-effective", "4001"]),
         ("public interface", ["moon", "info"]),
         ("format", ["moon", "fmt", "--check"]),

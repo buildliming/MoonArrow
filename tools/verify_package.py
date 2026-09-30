@@ -34,6 +34,7 @@ def main() -> int:
             [sys.executable, "tools/interop.py", "--target", "js"],
             [sys.executable, "tools/workflow.py", "--target", "native"],
             [sys.executable, "tools/workflow.py", "--target", "js"],
+            [sys.executable, "tools/iris_workflow.py", "--target", "native"],
         ]
         for command in commands:
             print("PACKAGE RUN " + " ".join(command), flush=True)

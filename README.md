@@ -53,6 +53,26 @@ python tools/workflow.py --target js --output-dir outputs/workflows-js
 Dictionary、List、Struct、Map。PyArrow 创建输入文件并验证 MoonBit 输出文件。
 示例的命令行适配器使用十六进制参数传输小文件，不适合大文件或性能测量。
 
+## 真实数据案例：跨批次筛选鸢尾花测量记录
+
+项目附带 UCI Machine Learning Repository 的完整 Iris 数据集（150 条真实观测，
+CC BY 4.0）。案例模拟研究人员用 Python/PyArrow 预处理数据、在 MoonBit 服务中
+筛选 `Iris-setosa` 并投影花萼长度与花瓣长度，再把精简后的 Arrow 文件交回
+Python 下游分析。输入按 37 行切分成多个 IPC 批次；脚本验证结果与 PyArrow
+筛选完全一致，包括列类型、元数据和全部 50 条结果。
+
+安装互操作依赖后运行：
+
+```sh
+python -m pip install -r tools/requirements-interop.txt
+python tools/iris_workflow.py --target native --output-dir outputs/iris-native
+python tools/iris_workflow.py --target js --output-dir outputs/iris-js
+```
+
+脚本将输入和筛选后的 `.arrow` 文件保存在指定目录。案例所用数据及署名信息见
+[examples/iris/README.md](examples/iris/README.md)。如同其他文件工作流，演示程序
+通过命令行传送小型 Arrow 文件，不是大文件 I/O 或性能基准。
+
 ## 验证与基准
 
 安装 `tools/requirements-interop.txt` 后，可一次运行四后端测试、Native/JS

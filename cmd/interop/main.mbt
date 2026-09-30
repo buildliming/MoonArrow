@@ -369,6 +369,24 @@ fn filtered_file(raw : String, project : Bool) -> @arrow.IpcData raise {
 }
 
 ///|
+/// Filter the public Iris measurements across file batches and retain the
+/// sepal length, petal length, and species fields for one-class analysis.
+fn filter_iris_setosa(raw : String) -> @arrow.IpcData raise {
+  let reader = @arrow.FileReader::new(unhex(raw))
+  let schema = reader.schema.project([0, 2, 4])
+  let batches = []
+  for i in 0..<reader.num_batches() {
+    let selected = reader
+      .get_batch(i)
+      .filter_where(Eq(4, Utf8Value("Iris-setosa")))
+    if selected.num_rows > 0 {
+      batches.push(selected.project([0, 2, 4]))
+    }
+  }
+  @arrow.Table::new(schema, batches).to_ipc_data()
+}
+
+///|
 /// Hex transport keeps this test executable portable and free of filesystem FFI.
 fn main {
   let args = @env.args()
@@ -383,9 +401,11 @@ fn main {
         filtered_file(raw, false)
       [_, "filter-project-file", raw] | [_, _, "filter-project-file", raw] =>
         filtered_file(raw, true)
+      [_, "iris-setosa", raw] | [_, _, "iris-setosa", raw] =>
+        filter_iris_setosa(raw)
       _ =>
         fail(
-          "usage: interop sample | stream HEX | file HEX | filter-file HEX | filter-project-file HEX",
+          "usage: interop sample | stream HEX | file HEX | filter-file HEX | filter-project-file HEX | iris-setosa HEX",
         )
     }
     Json::object({
