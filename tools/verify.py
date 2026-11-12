@@ -10,6 +10,7 @@ import argparse
 from datetime import datetime, timezone
 import importlib.metadata
 import json
+import os
 from pathlib import Path
 import platform
 import subprocess
@@ -24,29 +25,52 @@ def checks() -> list[tuple[str, list[str]]]:
     python = sys.executable
     return [
         ("moon version", ["moon", "version", "--all"]),
+        ("source revision", ["git", "rev-parse", "HEAD"]),
+        ("source changes", ["git", "status", "--porcelain"]),
         ("node version", ["node", "--version"]),
+        ("public interface", ["moon", "info"]),
         ("check all targets", ["moon", "check", "--target", "all", "--deny-warn"]),
         ("build all targets", ["moon", "build", "--target", "all", "--deny-warn"]),
         ("test all targets", ["moon", "test", "--target", "all", "--deny-warn"]),
         ("native demo", ["moon", "run", "cmd/main", "--target", "native"]),
         ("native consumer", ["moon", "run", "examples/consumer", "--target", "native"]),
+        ("js consumer", ["moon", "run", "examples/consumer", "--target", "js"]),
+        ("wasm consumer", ["moon", "run", "examples/consumer", "--target", "wasm"]),
+        ("wasm-gc consumer", ["moon", "run", "examples/consumer", "--target", "wasm-gc"]),
         ("native interop", [python, "tools/interop.py", "--target", "native"]),
         ("js interop", [python, "tools/interop.py", "--target", "js"]),
         ("native workflow", [python, "tools/workflow.py", "--target", "native"]),
         ("js workflow", [python, "tools/workflow.py", "--target", "js"]),
-        ("UCI Iris workflow", [python, "tools/iris_workflow.py", "--target", "native"]),
+        ("native UCI Iris workflow", [python, "tools/iris_workflow.py", "--target", "native"]),
+        ("js UCI Iris workflow", [python, "tools/iris_workflow.py", "--target", "js"]),
         ("core source count", [python, "tools/count_core.py", "--min-effective", "4001"]),
-        ("public interface", ["moon", "info"]),
         ("format", ["moon", "fmt", "--check"]),
-        ("interface diff", ["git", "diff", "--exit-code", "--", "*.mbti"]),
         ("whitespace diff", ["git", "diff", "--check"]),
         ("packaged source", [python, "tools/verify_package.py"]),
     ]
 
 
+def interface_snapshot() -> dict[str, str]:
+    result = subprocess.run(
+        ["git", "ls-files", "-z", "--", "*.mbti"],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=30,
+        check=True,
+    )
+    return {
+        path: (ROOT / path).read_text(encoding="utf-8")
+        for path in result.stdout.split("\0")
+        if path
+    }
+
+
 def run_check(name: str, command: list[str]) -> dict[str, object]:
     started = time.monotonic()
     try:
+        interfaces_before = interface_snapshot() if name == "public interface" else None
         result = subprocess.run(
             command,
             cwd=ROOT,
@@ -57,6 +81,19 @@ def run_check(name: str, command: list[str]) -> dict[str, object]:
             timeout=300,
             check=False,
         )
+        if interfaces_before is not None and result.returncode == 0:
+            interfaces_after = interface_snapshot()
+            changed = sorted(
+                path for path in interfaces_before.keys() | interfaces_after.keys()
+                if interfaces_before.get(path) != interfaces_after.get(path)
+            )
+            if changed:
+                result.returncode = 1
+                result.stderr += (
+                    "\nPublic interfaces changed during moon info:\n"
+                    + "\n".join(changed)
+                    + "\n"
+                )
         return {
             "name": name,
             "command": command,
@@ -65,7 +102,7 @@ def run_check(name: str, command: list[str]) -> dict[str, object]:
             "stdout": result.stdout,
             "stderr": result.stderr,
         }
-    except (OSError, subprocess.TimeoutExpired) as error:
+    except (OSError, subprocess.TimeoutExpired, subprocess.CalledProcessError) as error:
         return {
             "name": name,
             "command": command,
@@ -89,11 +126,23 @@ def main() -> int:
     except importlib.metadata.PackageNotFoundError:
         parser.error("PyArrow is required; install tools/requirements-interop.txt")
 
+    moon_home = Path(os.environ.get("MOON_HOME", Path.home() / ".moon"))
+    core_manifest = moon_home / "lib" / "core" / "moon.mod"
+    core_record = {"path": str(core_manifest)}
+    try:
+        core_record["contents"] = core_manifest.read_text(encoding="utf-8")
+    except OSError as error:
+        core_record["error"] = str(error)
     report = {
         "started_utc": datetime.now(timezone.utc).isoformat(),
         "platform": platform.platform(),
         "python": sys.version,
         "pyarrow": pyarrow_version,
+        "native_environment": {
+            key: os.environ.get(key)
+            for key in ("MOON_CC", "MOON_AR", "CC", "MOONBIT_NEW_NATIVE")
+        },
+        "core_manifest": core_record,
         "checks": [],
     }
     for name, command in checks():

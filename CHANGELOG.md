@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.2.3 — 2026-11-12
+
+- Run public API consumers on all four backends and the Iris workflow on
+  Native and JS in source and extracted-package verification.
+- Record source revision, working-tree changes, core and native compiler
+  details in the verification report.
+- Check interface generation before compilation against the current local
+  files, with Windows line-ending normalization.
+
 ## 0.2.2 — 2026-11-12
 
 - Migrate deprecated derive and parameter syntax with the official MoonBit formatter; use explicit Int32/UInt32 type names and refresh generated interfaces.

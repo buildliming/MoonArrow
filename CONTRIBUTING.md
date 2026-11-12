@@ -1,10 +1,12 @@
 # Development
 
-Use MoonBit `moonc 0.10.20+65efd5b93`, moon/moonrun 0.1.20261104 and the
-matching core. CI checks this fixed version and the current official stable
-toolchain on Ubuntu and Windows, including a weekly compatibility check.
-Run `moon version --all` when reporting an issue.
+Use MoonBit 0.10.20 (`moonc 0.10.20+65efd5b93`, moon 0.1.20261104) and its
+matching core. This is the minimum verified toolchain for the current source,
+which uses `#derive(...)`. CI checks this fixed version and official `latest`
+on Ubuntu and Windows on pushes, pull requests and weekly. Run
+`moon version --all` when reporting an issue.
 Python and PyArrow are test-only dependencies. Node.js is needed for JS execution.
+Windows Native requires MSVC-compatible C++ build tools and the Windows SDK.
 The repository is a two-member `moon.work` workspace: the library and an
 independent consumer using its public API. Run commands from the workspace root.
 
@@ -27,10 +29,12 @@ git diff --check
 ```
 
 For a complete source-tree check, run `python tools/verify.py` after installing
-`tools/requirements-interop.txt`. It runs the tests, interoperability checks,
-workflows, consumer, interface and format checks, and validates the extracted
-Mooncakes archive with the same backend tests and external workflows. It records command output,
-versions and exit codes in the ignored `outputs/validation.json`. The script
+`tools/requirements-interop.txt`. It checks, builds and tests all four backends,
+runs the Native demo and the public API consumer on each, and runs Native/JS interoperability,
+file and Iris workflows, interface and format checks. It validates the extracted
+Mooncakes archive through the same core checks. The ignored
+`outputs/validation.json` records command output, versions, core manifest,
+source revision, working-tree changes and exit codes. The script
 stops on the first failure and writes the partial report before returning a
 nonzero exit status. Benchmarks remain separate because their timings require
 a controlled local environment.

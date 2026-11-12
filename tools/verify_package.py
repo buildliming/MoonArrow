@@ -32,11 +32,15 @@ def main() -> int:
             ["moon", "run", "cmd/main", "--target", "native"],
             ["moon", "fmt", "--check"],
             ["moon", "run", "examples/consumer", "--target", "native"],
+            ["moon", "run", "examples/consumer", "--target", "js"],
+            ["moon", "run", "examples/consumer", "--target", "wasm"],
+            ["moon", "run", "examples/consumer", "--target", "wasm-gc"],
             [sys.executable, "tools/interop.py", "--target", "native"],
             [sys.executable, "tools/interop.py", "--target", "js"],
             [sys.executable, "tools/workflow.py", "--target", "native"],
             [sys.executable, "tools/workflow.py", "--target", "js"],
             [sys.executable, "tools/iris_workflow.py", "--target", "native"],
+            [sys.executable, "tools/iris_workflow.py", "--target", "js"],
         ]
         for command in commands:
             print("PACKAGE RUN " + " ".join(command), flush=True)

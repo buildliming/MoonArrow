@@ -1,5 +1,108 @@
 # Local validation and performance record
 
+## 2026-11-12 release 0.2.3
+
+Version 0.2.3 combines the verified 0.2.2 compatibility fixes with the aligned
+23-check source and 15-check extracted-archive workflow. The consumer
+dependency, README installation commands and changelog use the release version.
+The four-backend API and numerical test results from the aligned worktrees
+remain applicable to this verification-only maintenance update.
+The final 0.2.3 source passed all 23 checks, including 15 extracted-archive
+checks, with 63/63 tests on each of the four backends. Its command log is saved
+in `outputs/validation-release-0.2.3.json`.
+
+## 2026-11-12 published-version alignment
+
+Both source worktrees now follow the published `shunge/arrow@0.2.2` release
+commit `e1a680607adee975c55ab1ec4385da266d4deb11`. The registry package and its
+SHA256 were independently verified. The four release CI jobs on Ubuntu and
+Windows, using the fixed 0.10.20+65efd5b93 toolchain and official latest,
+completed successfully. The README, consumer dependency and release history
+now use the same version and toolchain.
+
+The combined verifier contains 23 source checks and 15 extracted-archive
+checks. It preserves the Native demo and strict test warnings from the
+released workflow, and adds four-backend public API consumers, Native/JS
+Iris workflows, source/core/compiler provenance and pre-compilation interface
+stability checks. CI retains the released official installers, Node.js 24,
+Windows MSVC initialization and weekly schedule.
+
+The additional verification changes are included in 0.2.3. Local
+validation uses the isolated Windows MSVC environment described below.
+
+After `moon clean`, both worktrees independently passed all 23 source checks
+and all 15 extracted-archive checks. Each reported 63/63 tests on all four
+backends, four public API consumers, the Native demo, 128 PyArrow assertions
+per Native/JS target, and both file and Iris workflows on Native and JS.
+Each worktree saved its full command log in
+`outputs/validation-aligned-2026-11-12.json`.
+
+## 2026-11-12 compatibility maintenance
+
+The official `latest` channel resolved to moon/moonrun 0.1.20261104 (940aa18),
+moonc 0.10.20+65efd5b93, and core 0.10.20+65efd5b93. The Windows toolchain
+was downloaded into an isolated directory and moved outside the build tree
+with MSVC 14.44.35207 and Windows SDK 10.0.26100.0 before final verification.
+The MSVC compiler product version is 14.44.35230.0.
+The local `activate-latest.ps1` sets this process's compiler and SDK environment.
+The run used `MOONBIT_NEW_NATIVE=1` and the MSVC driver, and began with
+`moon clean`, `moon info` and `moon fmt`.
+Its binary archive matched the official SHA256. The local test dependencies
+are Python 3.13.9, Node.js 24.15.0 and PyArrow 21.0.0.
+
+The original source passed all four backends on the previous 0.10.14
+toolchain, with 63 tests per backend. The current compiler exposed deprecated
+derive syntax and removed implicit JSON conversion methods. The source now
+uses prefix derive attributes, explicit JSON trait calls and JSON constructors.
+The current formatter also emits `Int32`/`UInt32` spellings. Comparing public
+interfaces after normalizing these aliases and derive syntax produced equal
+declarations. The language migrations are described in the
+[November toolchain update](https://www.moonbitlang.com/updates/2026/11/05/index).
+
+Windows Native requires MSVC-compatible C++ build tools and the Windows SDK.
+The machine's existing MinGW could run the historical toolchain. The current
+runtime requires the supported Windows toolchain documented in the
+[Native compiler configuration](https://docs.moonbitlang.com/en/stable/toolchain/moon/package.html).
+
+The initial local entry point contained 22 checks, including explicit builds,
+four-backend public API consumers and both Native/JS Iris workflows.
+That run independently extracted the generated archive and ran 14 checks.
+Interface verification compares local text before and after generation,
+allowing reviewed working-tree edits and normalizing Windows line endings.
+It runs before type checking, which can itself refresh generated interfaces.
+Failure, missing-command, timeout and interface-drift probes verified that
+the entry point writes a failed report and returns a nonzero status.
+
+All 22 checks passed after cleaning the build cache. Full command output is
+saved in the ignored `outputs/validation-latest-2026-11-12.json`.
+A second complete run also passed all 22 checks and the archive's 14 checks,
+recorded in `outputs/validation-latest-repeat-2026-11-12.json`.
+
+| Check | Current toolchain result |
+| --- | --- |
+| Four-backend check and build with `--deny-warn` | Passed |
+| Four-backend tests | 63/63 on Native, JS, Wasm and Wasm-GC |
+| Independent public API consumer | Passed on all four backends |
+| PyArrow interoperability | 128 assertions per Native/JS target |
+| Two file workflows and the full UCI Iris workflow | Passed on Native and JS |
+| Interface generation, formatting and whitespace | Passed |
+| Extracted Mooncakes archive | All 14 checks passed, including four-backend tests and consumers and Native/JS external workflows |
+
+Reproduce with the verified compiler, matching core and native build tools.
+
+```sh
+moon version --all
+python -m pip install -r tools/requirements-interop.txt
+python tools/verify.py --report outputs/validation-latest-2026-11-12.json
+```
+
+CI now checks the fixed 0.10.20+65efd5b93 toolchain/core and official `latest`
+on Ubuntu and Windows, on pushes, pull requests and weekly. Each job uploads
+its validation report, including failures. The compatibility fixes have
+been published in 0.2.2. All four remote CI jobs for release commit `e1a6806`
+passed. This worktree's additional verification coverage and interface checks
+are included in 0.2.3.
+
 ## 2026-11-12 release 0.2.2 compatibility verification
 
 The official current stable binaries were downloaded into isolated toolchain

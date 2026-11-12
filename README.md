@@ -5,11 +5,14 @@ FFI 依赖，可在 Native、JavaScript、Wasm、Wasm-GC 后端构建和测试�
 项目模块为 `shunge/arrow`，适合在 MoonBit 程序与 Python 等数据工具之间
 交换列式批次。
 
-> 本文对应 **0.2.1**。旧版 `0.1.0` 只有初始七种基础类型；使用本页能力请
-> 选择 `shunge/arrow@0.2.1`。它是 Arrow IPC 的明确子集，不代表完整 Arrow
+> 本文对应 **0.2.3**。旧版 `0.1.0` 只有初始七种基础类型；使用本页能力请
+> 选择 `shunge/arrow@0.2.3`。它是 Arrow IPC 的明确子集，不代表完整 Arrow
 > 规范实现。升级注意事项见[迁移指南](docs/MIGRATION.md)。
 
-## 0.2.1 能力
+本版整合工具链兼容修复与可复用验收增强，通过源码工作区与独立解包验证。
+本轮维护内容见 [CHANGELOG](CHANGELOG.md)。
+
+## 0.2.3 能力
 
 | 领域 | 范围 |
 | --- | --- |
@@ -25,20 +28,29 @@ FFI 依赖，可在 Native、JavaScript、Wasm、Wasm-GC 后端构建和测试�
 
 ## 开始使用
 
-安装 [MoonBit 工具链](https://www.moonbitlang.com/download/) 0.10.14
-（CI 固定 `0.10.14+7d59c7ec9` 及配套 core）后，在仓库根目录运行：
+安装 [MoonBit 工具链](https://www.moonbitlang.com/download/)。当前源码的最低
+验证版本为 `moonc 0.10.20+65efd5b93`、`moon 0.1.20261104` 及配套 core，
+使用 `#derive(...)` 语法。CI 在 Ubuntu/Windows 上检查这个固定版本和
+官方 `latest`，并每周复验。
+
+Windows 的 Native 后端需要 MSVC 兼容的 C++ 编译工具和 Windows SDK。
+安装 Visual Studio Build Tools 的 C++ 工作负载后，MoonBit 会查找工具链。
+配置细节见 [MoonBit Native 工具链说明](https://docs.moonbitlang.com/en/stable/toolchain/moon/package.html)。
+
+在仓库根目录执行以下命令。
 
 ```sh
 moon run examples/consumer --target native
 moon check --target all --deny-warn
-moon test --target all
+moon build --target all --deny-warn
+moon test --target all --deny-warn
 ```
 
 `examples/consumer` 是独立 MoonBit 模块，借助 `moon.work` 从本地源码依赖
-`shunge/arrow`，只调用公开 API。在其他项目中使用本版：
+`shunge/arrow`，只调用公开 API。在其他项目中使用本轮验证的已发布版本。
 
 ```sh
-moon add shunge/arrow@0.2.1
+moon add shunge/arrow@0.2.3
 ```
 
 真实 `.arrow` 文件的两个小型端到端工作流：
@@ -75,8 +87,9 @@ python tools/iris_workflow.py --target js --output-dir outputs/iris-js
 
 ## 验证与基准
 
-安装 `tools/requirements-interop.txt` 后，可一次运行四后端测试、Native/JS
-互操作与文件工作流、接口和格式检查，以及发布包解压后的独立验证，
+安装 `tools/requirements-interop.txt` 后，可一次运行四后端检查、构建、测试和
+公开 API 用例，Native/JS 互操作与文件工作流、接口和格式检查，
+以及发布包解压后的独立验证，
 并把逐项结果保存到 Git 忽略的
 `outputs/validation.json`：
 
@@ -94,7 +107,7 @@ python -m pip install -r tools/requirements-bench.txt
 python tools/bench.py --target native --output bench/native-local.json
 ```
 
-本地基线、0.2.1 发布验证、原始 Native/JS 基准和测量限制见
+本地基线、0.2.3 发布验证、原始 Native/JS 基准和测量限制见
 [验证记录](docs/VALIDATION.md)。核心代码按仓库内可复现脚本统计；
 行数是实施规模指标，功能和正确性仍以测试及独立互操作为准。
 
