@@ -17,7 +17,7 @@ test "partition and global row selection preserve order" {
 ///|
 test "table take_rows groups consecutive source rows across empty batches" {
   let schema = @arrow.Schema::new([@arrow.Field::new("n", Int32)])
-  let values : Array[Int?] = [Some(1), None, Some(3)]
+  let values : Array[Int32?] = [Some(1), None, Some(3)]
   let empty = @arrow.RecordBatch::new(schema, [Int32s([])])
   let first = @arrow.RecordBatch::new(schema, [Int32s(values)])
   let second = @arrow.RecordBatch::new(schema, [Int32s([Some(4), Some(5)])])

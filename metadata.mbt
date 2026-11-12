@@ -1,5 +1,5 @@
 ///|
-fn encode_metadata(out : Array[Byte], entries : Array[KeyValue]) -> Int {
+fn encode_metadata(out : Array[Byte], entries : Array[KeyValue]) -> Int32 {
   let vector = fb_vector(out, entries.length(), 4, 4)
   for i in 0..<entries.length() {
     let entry = entries[i]
@@ -17,8 +17,8 @@ fn encode_metadata(out : Array[Byte], entries : Array[KeyValue]) -> Int {
 ///|
 fn decode_metadata(
   data : Bytes,
-  table : Int,
-  slot : Int,
+  table : Int32,
+  slot : Int32,
   limits : ReadLimits,
 ) -> Array[KeyValue] raise ArrowError {
   let (p, n) = vector_info(data, table, slot, 4, limits.max_fields)
@@ -36,7 +36,7 @@ fn decode_metadata(
 }
 
 ///|
-fn encode_field(out : Array[Byte], field : Field) -> Int {
+fn encode_field(out : Array[Byte], field : Field) -> Int32 {
   let f = fb_table(out, 7)
   fb_ref(out, f, 0, fb_string(out, field.name))
   fb_int(out, f, 1, if field.nullable { 1 } else { 0 })
@@ -144,8 +144,8 @@ fn encode_field(out : Array[Byte], field : Field) -> Int {
 fn encode_schema(
   out : Array[Byte],
   schema : Schema,
-  replacement? : Bool = false,
-) -> Int {
+  replacement~ : Bool = false,
+) -> Int32 {
   let table = fb_table(out, 4)
   let fields = fb_vector(out, schema.fields.length(), 4, 4)
   fb_ref(out, table, 1, fields)
@@ -168,10 +168,10 @@ fn encode_schema(
 ///|
 fn decode_field(
   data : Bytes,
-  f : Int,
+  f : Int32,
   limits : ReadLimits,
-  depth : Int,
-) -> (Field, Int) raise ArrowError {
+  depth : Int32,
+) -> (Field, Int32) raise ArrowError {
   if depth > limits.max_depth {
     raise LimitExceeded("nested field depth")
   }
@@ -316,7 +316,7 @@ fn decode_field(
 ///|
 fn decode_schema(
   data : Bytes,
-  table : Int,
+  table : Int32,
   limits : ReadLimits,
 ) -> Schema raise ArrowError {
   if field_int(data, table, 0, 2, 0) != 0 {
@@ -359,7 +359,7 @@ fn decode_schema(
 }
 
 ///|
-fn time_unit_code(unit : TimeUnit) -> Int {
+fn time_unit_code(unit : TimeUnit) -> Int32 {
   match unit {
     Second => 0
     Millisecond => 1
@@ -369,7 +369,7 @@ fn time_unit_code(unit : TimeUnit) -> Int {
 }
 
 ///|
-fn decode_time_unit(code : Int) -> TimeUnit raise ArrowError {
+fn decode_time_unit(code : Int32) -> TimeUnit raise ArrowError {
   match code {
     0 => Second
     1 => Millisecond
@@ -382,16 +382,16 @@ fn decode_time_unit(code : Int) -> TimeUnit raise ArrowError {
 ///|
 priv struct BodyLayout {
   body : Bytes
-  nodes : Array[(Int, Int)]
-  buffers : Array[(Int, Int)]
+  nodes : Array[(Int32, Int32)]
+  buffers : Array[(Int32, Int32)]
 }
 
 ///|
 fn encode_batch_header(
   out : Array[Byte],
-  rows : Int,
+  rows : Int32,
   layout : BodyLayout,
-) -> Int {
+) -> Int32 {
   let table = fb_table(out, 3)
   fb_long(out, table, 0, rows.to_int64())
   let nodes = fb_vector(out, layout.nodes.length(), 16, 8)
@@ -412,7 +412,7 @@ fn encode_batch_header(
 }
 
 ///|
-fn schema_message(schema : Schema, replacement? : Bool = false) -> Bytes {
+fn schema_message(schema : Schema, replacement~ : Bool = false) -> Bytes {
   let out : Array[Byte] = [b'\x00', b'\x00', b'\x00', b'\x00']
   let message = fb_table(out, 4)
   put_i32(out, 0, message.pos)
@@ -424,7 +424,7 @@ fn schema_message(schema : Schema, replacement? : Bool = false) -> Bytes {
 }
 
 ///|
-fn batch_message(rows : Int, layout : BodyLayout) -> Bytes {
+fn batch_message(rows : Int32, layout : BodyLayout) -> Bytes {
   let out : Array[Byte] = [b'\x00', b'\x00', b'\x00', b'\x00']
   let message = fb_table(out, 4)
   put_i32(out, 0, message.pos)
@@ -439,19 +439,19 @@ fn batch_message(rows : Int, layout : BodyLayout) -> Bytes {
 ///|
 priv struct Frame {
   metadata : Bytes
-  version : Int
-  header : Int
-  kind : Int
+  version : Int32
+  header : Int32
+  kind : Int32
   body : Bytes
-  next : Int
-  metadata_size : Int
+  next : Int32
+  metadata_size : Int32
 }
 
 ///|
 fn read_frame(
   data : Bytes,
-  start : Int,
-  end : Int,
+  start : Int32,
+  end : Int32,
   limits : ReadLimits,
 ) -> Frame? raise ArrowError {
   if start < 0 || end > data.length() || start > end {

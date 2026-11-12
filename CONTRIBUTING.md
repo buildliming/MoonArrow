@@ -1,15 +1,19 @@
 # Development
 
-Use MoonBit 0.10.14 (`moonc 0.10.14+7d59c7ec9`, moon 0.1.20260920), the
-fixed toolchain/core version in CI. Earlier local records used 0.10.11;
-run `moon version --all` when reporting an issue.
+Use MoonBit `moonc 0.10.20+65efd5b93`, moon/moonrun 0.1.20261104 and the
+matching core. CI checks this fixed version and the current official stable
+toolchain on Ubuntu and Windows, including a weekly compatibility check.
+Run `moon version --all` when reporting an issue.
 Python and PyArrow are test-only dependencies. Node.js is needed for JS execution.
 The repository is a two-member `moon.work` workspace: the library and an
 independent consumer using its public API. Run commands from the workspace root.
 
 ```sh
+moon version --all
 moon check --target all --deny-warn
-moon test --target all
+moon build --target all --deny-warn
+moon test --target all --deny-warn
+moon run cmd/main --target native
 python -m pip install -r tools/requirements-interop.txt
 python tools/interop.py --target native
 python tools/interop.py --target js

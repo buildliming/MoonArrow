@@ -2,8 +2,8 @@
 
 `shunge/arrow` 是纯 MoonBit 实现的 Apache Arrow IPC 读写库，让 MoonBit
 程序通过标准列式数据格式与 Python 等数据工具交换数据。
-本文对应 0.2.1，模块名为 `shunge/arrow`。0.1.0 只有初始七种基础类型，
-以下扩展能力请使用 `shunge/arrow@0.2.1`。
+本文对应 0.2.2，模块名为 `shunge/arrow`。0.1.0 只有初始七种基础类型，
+以下扩展能力请使用 `shunge/arrow@0.2.2`。
 
 生产代码只依赖 MoonBit 标准库，不依赖 PyArrow、Arrow C++ 或 FFI。
 PyArrow 仅用于开发时的独立互操作测试。
@@ -25,10 +25,10 @@ PyArrow 仅用于开发时的独立互操作测试。
 ## 快速示例
 
 以下代码块会由 MoonBit 文档测试执行。在本仓库中运行不需要先发布包。
-在其他 MoonBit 项目中安装 **0.2.1**：
+在其他 MoonBit 项目中安装 **0.2.2**：
 
 ```sh
-moon add shunge/arrow@0.2.1
+moon add shunge/arrow@0.2.2
 ```
 
 然后在调用方的 `moon.pkg` 中导入 `shunge/arrow`：
@@ -43,7 +43,7 @@ import {
 [GitHub 源码](https://github.com/buildliming/MoonArrow)
 
 本仓库的 `examples/consumer` 是一个独立模块，`moon.work` 将它的
-`shunge/arrow@0.2.1` 依赖解析到本地源码，因此可验证本版公开 API。
+`shunge/arrow@0.2.2` 依赖解析到本地源码，因此可验证本版公开 API。
 运行 `moon run examples/consumer --target native`。
 
 ```mbt check
@@ -109,9 +109,20 @@ body 字节数、递归深度、字典值数和字典消息数上限。默认每
 
 ## 兼容性验证
 
+2026-11-12 使用官方稳定工具链实测 `moon 0.1.20261104`、
+`moonc v0.10.20+65efd5b93`、`moonrun 0.1.20261104` 及配套 core。
+安装和更新方式见 [MoonBit 官方下载页](https://www.moonbitlang.com/download/)。
+CI 在 Ubuntu、Windows 上验证固定版本和官方当前稳定版，并每周执行兼容性检查。
+本版使用 `#derive`、`Int32`/`UInt32` 和命名参数的新语法，消费项目应使用上述工具链或通过 CI 的后续稳定版。
+Windows 的当前 native 工具链需要 MSVC C++ Build Tools 与 Windows SDK，并在开发者命令行中运行。Linux native 使用系统 C 工具链。
+
 ```sh
+moon version --all
 moon check --target all --deny-warn
-moon test --target all
+moon build --target all --deny-warn
+moon test --target all --deny-warn
+moon run cmd/main --target native
+moon run examples/consumer --target native
 python -m pip install -r tools/requirements-interop.txt
 python tools/interop.py --target native
 python tools/interop.py --target js

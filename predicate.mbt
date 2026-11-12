@@ -2,15 +2,16 @@
 /// A small, typed predicate for batch and table filtering. Equality uses
 /// floating-point bit patterns, so -0.0 differs from +0.0 and equal NaN
 /// payloads compare equal. Null values never satisfy Eq or Ne.
+#derive(Debug)
 pub(all) enum Predicate {
-  Eq(Int, Value)
-  Ne(Int, Value)
-  IsNull(Int)
-  IsNotNull(Int)
+  Eq(Int32, Value)
+  Ne(Int32, Value)
+  IsNull(Int32)
+  IsNotNull(Int32)
   And(Predicate, Predicate)
   Or(Predicate, Predicate)
   Not(Predicate)
-} derive(Debug)
+}
 
 ///|
 fn predicate_value_supported(data_type : DataType) -> Bool {
@@ -47,7 +48,7 @@ fn Predicate::check(self : Predicate, schema : Schema) -> Unit raise ArrowError 
 }
 
 ///|
-fn Column::equals_value(self : Column, row : Int, value : Value) -> Bool {
+fn Column::equals_value(self : Column, row : Int32, value : Value) -> Bool {
   match (self, value) {
     (Booleans(a), BooleanValue(x)) => a[row] == Some(x)
     (Int8s(a), Int8Value(x)) => a[row] == Some(x)
@@ -85,7 +86,7 @@ fn Column::equals_value(self : Column, row : Int, value : Value) -> Bool {
 fn Predicate::evaluate(
   self : Predicate,
   batch : RecordBatch,
-  row : Int,
+  row : Int32,
 ) -> Bool {
   match self {
     Eq(index, value) => batch.columns[index].equals_value(row, value)

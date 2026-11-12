@@ -5,21 +5,21 @@
 pub struct IncrementalReader {
   priv limits : ReadLimits
   priv mut pending : Array[Byte]
-  priv mut needed : Int
-  priv mut stage : Int
-  priv mut prefix : Int
-  priv mut metadata_size : Int
+  priv mut needed : Int32
+  priv mut stage : Int32
+  priv mut prefix : Int32
+  priv mut metadata_size : Int32
   priv mut schema_value : Schema?
   priv dictionaries : Array[DictionaryEntry]
-  priv mut dictionary_messages : Int
-  priv mut batches : Int
+  priv mut dictionary_messages : Int32
+  priv mut batches : Int32
   priv mut finished : Bool
   priv mut failed : Bool
 }
 
 ///|
 pub fn IncrementalReader::new(
-  limits? : ReadLimits = ReadLimits::default(),
+  limits~ : ReadLimits = ReadLimits::default(),
 ) -> IncrementalReader raise ArrowError {
   limits.validate()
   {
@@ -48,7 +48,7 @@ pub fn IncrementalReader::schema(self : IncrementalReader) -> Schema? {
 }
 
 ///|
-pub fn IncrementalReader::num_batches(self : IncrementalReader) -> Int {
+pub fn IncrementalReader::num_batches(self : IncrementalReader) -> Int32 {
   self.batches
 }
 

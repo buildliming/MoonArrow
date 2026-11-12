@@ -10,7 +10,7 @@ fn hex(bytes : Bytes) -> String {
 }
 
 ///|
-fn nibble(c : Char) -> Int raise {
+fn nibble(c : Char) -> Int32 raise {
   if c >= '0' && c <= '9' {
     return c.to_int() - '0'.to_int()
   }
@@ -40,17 +40,17 @@ fn unhex(s : String) -> Bytes raise {
 
 ///|
 fn metadata_json(entries : Array[@arrow.KeyValue]) -> Json {
-  entries
-  .map(entry => {
-    Json::array([
-      Json::string(entry.key),
-      match entry.value {
-        Some(v) => Json::string(v)
-        None => Json::null()
-      },
-    ])
-  })
-  .to_json()
+  Json::array(
+    entries.map(entry => {
+      Json::array([
+        Json::string(entry.key),
+        match entry.value {
+          Some(v) => Json::string(v)
+          None => Json::null()
+        },
+      ])
+    }),
+  )
 }
 
 ///|
@@ -139,27 +139,30 @@ fn schema_json(schema : @arrow.Schema) -> Json {
   let fields = schema.fields.map(field => {
     let kind = field_type_string(field)
     Json::object({
-      "name": field.name.to_json(),
-      "type": kind.to_json(),
-      "nullable": field.nullable.to_json(),
+      "name": ToJson::to_json(field.name),
+      "type": ToJson::to_json(kind),
+      "nullable": ToJson::to_json(field.nullable),
       "metadata": metadata_json(field.metadata),
     })
   })
-  { "fields": fields.to_json(), "metadata": metadata_json(schema.metadata) }
+  {
+    "fields": ToJson::to_json(fields),
+    "metadata": metadata_json(schema.metadata),
+  }
 }
 
 ///|
-fn cell_json(column : @arrow.Column, field : @arrow.Field, i : Int) -> Json {
+fn cell_json(column : @arrow.Column, field : @arrow.Field, i : Int32) -> Json {
   match column {
     Nulls(_) => Json::null()
     Booleans(a) =>
       match a[i] {
-        Some(x) => x.to_json()
+        Some(x) => ToJson::to_json(x)
         None => Json::null()
       }
     Int8s(a) | Int16s(a) | Int32s(a) | UInt8s(a) | UInt16s(a) | Date32s(a) =>
       match a[i] {
-        Some(x) => x.to_json()
+        Some(x) => ToJson::to_json(x)
         None => Json::null()
       }
     Int64s(a) | Date64s(a) | Timestamps(a, _, _) | Durations(a, _) =>
@@ -169,7 +172,7 @@ fn cell_json(column : @arrow.Column, field : @arrow.Field, i : Int) -> Json {
       }
     UInt32s(a) =>
       match a[i] {
-        Some(x) => x.to_json()
+        Some(x) => ToJson::to_json(x)
         None => Json::null()
       }
     UInt64s(a) =>
@@ -189,7 +192,7 @@ fn cell_json(column : @arrow.Column, field : @arrow.Field, i : Int) -> Json {
       }
     Strings(a) =>
       match a[i] {
-        Some(x) => x.to_json()
+        Some(x) => ToJson::to_json(x)
         None => Json::null()
       }
     Binaries(a) =>
@@ -199,7 +202,7 @@ fn cell_json(column : @arrow.Column, field : @arrow.Field, i : Int) -> Json {
       }
     LargeStrings(a) =>
       match a[i] {
-        Some(x) => x.to_json()
+        Some(x) => ToJson::to_json(x)
         None => Json::null()
       }
     LargeBinaries(a) | FixedBinaries(a, _) =>
@@ -282,20 +285,22 @@ fn cell_json(column : @arrow.Column, field : @arrow.Field, i : Int) -> Json {
 
 ///|
 fn column_json(column : @arrow.Column, field : @arrow.Field) -> Json {
-  Array::makei(column.length(), i => cell_json(column, field, i)).to_json()
+  Json::array(Array::makei(column.length(), i => cell_json(column, field, i)))
 }
 
 ///|
 fn data_json(data : @arrow.IpcData) -> Json {
   let batches = data.batches.map(batch => {
     Json::object({
-      "rows": batch.num_rows.to_json(),
-      "columns": Array::makei(batch.columns.length(), i => {
-        column_json(batch.columns[i], data.schema.fields[i])
-      }).to_json(),
+      "rows": ToJson::to_json(batch.num_rows),
+      "columns": Json::array(
+        Array::makei(batch.columns.length(), i => {
+          column_json(batch.columns[i], data.schema.fields[i])
+        }),
+      ),
     })
   })
-  { "schema": schema_json(data.schema), "batches": batches.to_json() }
+  { "schema": schema_json(data.schema), "batches": ToJson::to_json(batches) }
 }
 
 ///|
@@ -410,13 +415,15 @@ fn main {
     }
     Json::object({
       "data": data_json(data),
-      "stream": hex(@arrow.write_stream(data.schema, data.batches)).to_json(),
-      "file": hex(@arrow.write_file(data.schema, data.batches)).to_json() catch {
+      "stream": Json::string(
+        hex(@arrow.write_stream(data.schema, data.batches)),
+      ),
+      "file": Json::string(hex(@arrow.write_file(data.schema, data.batches))) catch {
         _ => Json::null()
       },
     })
   } catch {
-    error => Json::object({ "error": error.to_string().to_json() })
+    error => Json::object({ "error": Json::string(error.to_string()) })
   }
   println(result.stringify())
 }

@@ -14,7 +14,7 @@ fn bytes_array(bytes : Bytes) -> Array[Byte] {
 }
 
 ///|
-fn framed_batch(schema : Schema, rows : Int, layout : BodyLayout) -> Bytes {
+fn framed_batch(schema : Schema, rows : Int32, layout : BodyLayout) -> Bytes {
   let out : Array[Byte] = []
   write_frame(out, schema_message(schema), b"")
   write_frame(out, batch_message(rows, layout), layout.body)

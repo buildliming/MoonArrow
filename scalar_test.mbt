@@ -28,7 +28,7 @@ test "table scalar access crosses empty batches and keeps owned nullable rows" {
     @arrow.Field::new("id", Int32),
     @arrow.Field::new("name", Utf8),
   ])
-  let ids : Array[Int?] = [Some(1), None]
+  let ids : Array[Int32?] = [Some(1), None]
   let names : Array[String?] = [None, Some("moon")]
   let empty = @arrow.RecordBatch::new(schema, [Int32s([]), Strings([])])
   let first = @arrow.RecordBatch::new(schema, [Int32s(ids), Strings(names)])

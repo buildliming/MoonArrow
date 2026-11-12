@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.2 — 2026-11-12
+
+- Migrate deprecated derive and parameter syntax with the official MoonBit formatter; use explicit Int32/UInt32 type names and refresh generated interfaces.
+- Validate with moon/moonrun 0.1.20261104, moonc 0.10.20+65efd5b93 and matching core.
+- Check the fixed toolchain and current official stable release on Ubuntu and Windows, including weekly compatibility runs.
+- Replace removed implicit JSON conversion methods in the interoperability transport with explicit trait calls and JSON constructors.
+- Include explicit four-backend builds and the documented demo in source and extracted-package verification.
+
 ## 0.2.1 — 2026-09-30
 
 - Pin CI to MoonBit 0.10.14+7d59c7ec9 and its matching core.

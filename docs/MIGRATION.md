@@ -1,10 +1,14 @@
 # Migration from the published 0.1.0 subset
 
-Version 0.2.1 adds APIs and types. Upgrade with `moon add shunge/arrow@0.2.1`.
+The 0.2 series adds APIs and types. Install the maintained release with
+`moon add shunge/arrow@0.2.2`.
 Code depending on `shunge/arrow@0.1.0` continues to see the original seven-type
 package unless a workspace resolves the module to this local source tree.
 
-Use MoonBit 0.10.14+7d59c7ec9 and its matching core for 0.2.1. Checked byte
+Use MoonBit 0.10.20+65efd5b93 and its matching core for 0.2.2. The source
+uses `#derive`, `Int32`/`UInt32` and the current named-parameter syntax.
+`Int32` and `UInt32` preserve the previous `Int` and `UInt` representations.
+The generated public interfaces reflect these spelling changes. Checked byte
 slices use `Bytes.exact_view`; explicit trait extensions preserve the public
 `equal`, `not_equal` and `to_repr` methods as implicit promotion is deprecated.
 

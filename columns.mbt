@@ -1,7 +1,7 @@
 ///|
 fn add_buffer(
   body : Array[Byte],
-  buffers : Array[(Int, Int)],
+  buffers : Array[(Int32, Int32)],
   bytes : Bytes,
 ) -> Unit {
   align_bytes(body, 8)
@@ -12,8 +12,8 @@ fn add_buffer(
 ///|
 fn encode_column(
   body : Array[Byte],
-  nodes : Array[(Int, Int)],
-  buffers : Array[(Int, Int)],
+  nodes : Array[(Int32, Int32)],
+  buffers : Array[(Int32, Int32)],
   column : Column,
 ) -> Unit raise ArrowError {
   let n = column.length()
@@ -210,7 +210,11 @@ fn encode_body(batch : RecordBatch) -> BodyLayout raise ArrowError {
 }
 
 ///|
-fn body_buffer(frame : Frame, base : Int, i : Int) -> Bytes raise ArrowError {
+fn body_buffer(
+  frame : Frame,
+  base : Int32,
+  i : Int32,
+) -> Bytes raise ArrowError {
   let offset = bounded_i64(
     read_i64(frame.metadata, base + i * 16),
     frame.body.length(),
@@ -226,17 +230,17 @@ fn body_buffer(frame : Frame, base : Int, i : Int) -> Bytes raise ArrowError {
 
 ///|
 priv struct BodyCursor {
-  nodes : Int
-  node_count : Int
-  mut node : Int
-  buffers : Int
-  buffer_count : Int
-  mut buffer : Int
-  mut remaining_values : Int
+  nodes : Int32
+  node_count : Int32
+  mut node : Int32
+  buffers : Int32
+  buffer_count : Int32
+  mut buffer : Int32
+  mut remaining_values : Int32
 }
 
 ///|
-fn field_layout(field : Field) -> (Int, Int) {
+fn field_layout(field : Field) -> (Int32, Int32) {
   let mut nodes = 1
   let mut buffers = match field.data_type {
     Null => 0
@@ -271,10 +275,10 @@ fn next_body_buffer(
 fn decode_column(
   frame : Frame,
   field : Field,
-  expected : Int,
+  expected : Int32,
   cursor : BodyCursor,
   limits : ReadLimits,
-  depth : Int,
+  depth : Int32,
   dictionaries : Array[DictionaryEntry],
 ) -> Column raise ArrowError {
   if depth > limits.max_depth {

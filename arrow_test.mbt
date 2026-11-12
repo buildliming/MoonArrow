@@ -70,7 +70,7 @@ test "invalid batches are rejected and mutable input is revalidated" {
   let schema = @arrow.Schema::new([
     @arrow.Field::new("a", Int32, nullable=false),
   ])
-  let a : Array[Int?] = [Some(1)]
+  let a : Array[Int32?] = [Some(1)]
   let batch = @arrow.RecordBatch::new(schema, [Int32s(a)])
   a[0] = None
   let result = try {

@@ -27,7 +27,9 @@ def main() -> int:
         # The archive must carry its own workspace, sources and test tools.
         commands = [
             ["moon", "check", "--target", "all", "--deny-warn"],
-            ["moon", "test", "--target", "all"],
+            ["moon", "build", "--target", "all", "--deny-warn"],
+            ["moon", "test", "--target", "all", "--deny-warn"],
+            ["moon", "run", "cmd/main", "--target", "native"],
             ["moon", "fmt", "--check"],
             ["moon", "run", "examples/consumer", "--target", "native"],
             [sys.executable, "tools/interop.py", "--target", "native"],

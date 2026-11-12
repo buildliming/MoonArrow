@@ -6,7 +6,7 @@ pub struct FileWriter {
   priv blocks : Array[FileBlock]
   priv dictionary_blocks : Array[FileBlock]
   priv dictionaries : Array[DictionaryEntry]
-  priv mut offset : Int
+  priv mut offset : Int32
   priv mut started : Bool
   priv mut finished : Bool
   priv mut failed : Bool

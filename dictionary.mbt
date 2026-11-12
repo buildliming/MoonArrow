@@ -105,7 +105,7 @@ fn emit_dictionary_updates(
 }
 
 ///|
-fn dictionary_slot(entries : Array[DictionaryEntry], id : Int64) -> Int {
+fn dictionary_slot(entries : Array[DictionaryEntry], id : Int64) -> Int32 {
   for i in 0..<entries.length() {
     if entries[i].id == id {
       return i
@@ -139,7 +139,7 @@ fn dictionary_field(schema : Schema, id : Int64) -> Field raise ArrowError {
 ///|
 fn dictionary_message(
   id : Int64,
-  rows : Int,
+  rows : Int32,
   layout : BodyLayout,
   delta : Bool,
 ) -> Bytes {

@@ -1,7 +1,7 @@
 ///|
 fn validate_field_schema(
   field : Field,
-  depth : Int,
+  depth : Int32,
   seen : Array[(Int64, DataType, Bool)],
 ) -> Unit raise ArrowError {
   if depth > 64 {

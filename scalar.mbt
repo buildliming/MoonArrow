@@ -1,7 +1,7 @@
 ///|
 /// Return a logical scalar, resolving dictionary indices and nested child
 /// arrays. A returned None represents a null slot at this level.
-pub fn Column::get(self : Column, index : Int) -> Value? raise ArrowError {
+pub fn Column::get(self : Column, index : Int32) -> Value? raise ArrowError {
   if index < 0 || index >= self.length() {
     raise Invalid("column index out of range")
   }
@@ -174,7 +174,7 @@ pub fn Column::get(self : Column, index : Int) -> Value? raise ArrowError {
 ///|
 pub fn RecordBatch::get_row(
   self : RecordBatch,
-  index : Int,
+  index : Int32,
 ) -> Array[Value?] raise ArrowError {
   self.validate()
   if index < 0 || index >= self.num_rows {
@@ -186,7 +186,7 @@ pub fn RecordBatch::get_row(
 ///|
 fn RecordBatch::row_unchecked(
   self : RecordBatch,
-  index : Int,
+  index : Int32,
 ) -> Array[Value?] raise ArrowError {
   self.columns.map(column => column.get(index))
 }
@@ -194,7 +194,7 @@ fn RecordBatch::row_unchecked(
 ///|
 pub fn Table::get_row(
   self : Table,
-  index : Int,
+  index : Int32,
 ) -> Array[Value?] raise ArrowError {
   if index < 0 || index >= self.num_rows() {
     raise Invalid("table row index out of range")

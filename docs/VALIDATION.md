@@ -1,5 +1,40 @@
 # Local validation and performance record
 
+## 2026-11-12 release 0.2.2 compatibility verification
+
+The official current stable binaries were downloaded into isolated toolchain
+directories and checked against their published SHA256 values. Actual versions
+were moon/moonrun 0.1.20261104 (940aa18) and moonc
+0.10.20+65efd5b93, with the matching official core.
+
+`python tools/verify.py --report outputs/validation-linux-2026-11-12.json`
+passed all **18 checks** on Ubuntu 24.04 under WSL2, with GCC 13.3.0,
+Python 3.12.3, Node.js 18.19.1 and PyArrow 21.0.0.
+
+| Check | Local result |
+| --- | --- |
+| Four-backend warning-free check and explicit build | Passed |
+| wasm / wasm-gc / js / native tests | 63/63 passed per backend |
+| Native demo and independent public-API consumer | Passed |
+| PyArrow interoperability | 128 assertions passed on Native and 128 on JS |
+| File workflows and UCI Iris workflow | Passed |
+| Generated interfaces, format and whitespace | Passed |
+| Exact extracted Mooncakes archive | Four-backend check/build/tests, demo, consumer and all external workflows passed |
+
+Windows also passed explicit builds and all 63 tests on each of js, wasm and
+wasm-gc, together with the JS PyArrow assertions and file workflows. The current
+Windows native toolchain requires MSVC C++ tools and the Windows SDK. This
+machine has GCC, so local native validation used Linux. CI initializes MSVC
+on Windows and checks both the fixed compiler and the official current stable
+release on both operating systems, including weekly compatibility runs.
+
+The new compiler rejected 18 deprecated derive declarations and 17 implicit
+JSON method calls in the interoperability transport. The formatter migrated
+type and parameter spellings. After normalizing Int/UInt aliases, all 130
+public function signatures match the previous interfaces. The full command
+reports remain in the ignored `outputs/` directory. Registry publication and
+remote CI results are checked separately after this local validation.
+
 ## 2026-09-30 release 0.2.1 verification
 
 Windows 11; moon/moonrun 0.1.20260920 (914d7da),

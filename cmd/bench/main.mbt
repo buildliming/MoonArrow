@@ -1,5 +1,5 @@
 ///|
-fn run_case(rows : Int, iterations : Int) -> Unit raise {
+fn run_case(rows : Int32, iterations : Int32) -> Unit raise {
   let schema = @arrow.Schema::new([
     @arrow.Field::new("id", Int32, nullable=false),
     @arrow.Field::new("label", Utf8),

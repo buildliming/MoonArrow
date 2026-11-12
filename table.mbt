@@ -5,7 +5,7 @@
 pub struct Table {
   schema : Schema
   priv batches : Array[RecordBatch]
-  priv mut row_count : Int
+  priv mut row_count : Int32
 }
 
 ///|
@@ -34,7 +34,7 @@ pub fn Table::new(
 ///|
 pub fn Table::from_stream(
   bytes : Bytes,
-  limits? : ReadLimits = ReadLimits::default(),
+  limits~ : ReadLimits = ReadLimits::default(),
 ) -> Table raise ArrowError {
   let data = read_stream(bytes, limits~)
   Table::new(data.schema, data.batches)
@@ -43,7 +43,7 @@ pub fn Table::from_stream(
 ///|
 pub fn Table::from_file(
   bytes : Bytes,
-  limits? : ReadLimits = ReadLimits::default(),
+  limits~ : ReadLimits = ReadLimits::default(),
 ) -> Table raise ArrowError {
   let data = read_file(bytes, limits~)
   Table::new(data.schema, data.batches)
@@ -66,7 +66,7 @@ pub fn Table::to_ipc_data(self : Table) -> IpcData raise ArrowError {
 }
 
 ///|
-pub fn Table::num_rows(self : Table) -> Int {
+pub fn Table::num_rows(self : Table) -> Int32 {
   self.row_count
 }
 
@@ -76,14 +76,14 @@ pub fn Table::is_empty(self : Table) -> Bool {
 }
 
 ///|
-pub fn Table::num_batches(self : Table) -> Int {
+pub fn Table::num_batches(self : Table) -> Int32 {
   self.batches.length()
 }
 
 ///|
 pub fn Table::get_batch(
   self : Table,
-  index : Int,
+  index : Int32,
 ) -> RecordBatch raise ArrowError {
   if index < 0 || index >= self.batches.length() {
     raise Invalid("table batch index out of range")
@@ -115,7 +115,7 @@ pub fn Table::append(
 /// Select columns in every batch, preserving batch boundaries and metadata.
 pub fn Table::project(
   self : Table,
-  indices : Array[Int],
+  indices : Array[Int32],
 ) -> Table raise ArrowError {
   if self.batches.is_empty() {
     let fields = []
@@ -138,8 +138,8 @@ pub fn Table::project(
 /// Return a range of global table rows. A range may cross batch boundaries.
 pub fn Table::slice_rows(
   self : Table,
-  start : Int,
-  length : Int,
+  start : Int32,
+  length : Int32,
 ) -> Table raise ArrowError {
   if start < 0 ||
     length < 0 ||
@@ -196,7 +196,7 @@ pub fn Table::concat(self : Table, other : Table) -> Table raise ArrowError {
 ///|
 /// Rechunk batches to at most max_rows rows. This is useful for controlling
 /// downstream IPC message size, especially when source batches are uneven.
-pub fn Table::rechunk(self : Table, max_rows : Int) -> Table raise ArrowError {
+pub fn Table::rechunk(self : Table, max_rows : Int32) -> Table raise ArrowError {
   if max_rows <= 0 {
     raise Invalid("max_rows must be positive")
   }

@@ -1,5 +1,9 @@
 ///|
-fn check_range(data : Bytes, offset : Int, size : Int) -> Unit raise ArrowError {
+fn check_range(
+  data : Bytes,
+  offset : Int32,
+  size : Int32,
+) -> Unit raise ArrowError {
   if offset < 0 ||
     size < 0 ||
     offset > data.length() ||
@@ -9,19 +13,19 @@ fn check_range(data : Bytes, offset : Int, size : Int) -> Unit raise ArrowError 
 }
 
 ///|
-fn read_u8(data : Bytes, p : Int) -> Int raise ArrowError {
+fn read_u8(data : Bytes, p : Int32) -> Int32 raise ArrowError {
   check_range(data, p, 1)
   data[p].to_int()
 }
 
 ///|
-fn read_u16(data : Bytes, p : Int) -> Int raise ArrowError {
+fn read_u16(data : Bytes, p : Int32) -> Int32 raise ArrowError {
   check_range(data, p, 2)
   data[p].to_int() | (data[p + 1].to_int() << 8)
 }
 
 ///|
-fn read_i32(data : Bytes, p : Int) -> Int raise ArrowError {
+fn read_i32(data : Bytes, p : Int32) -> Int32 raise ArrowError {
   check_range(data, p, 4)
   data[p].to_int() |
   (data[p + 1].to_int() << 8) |
@@ -30,7 +34,7 @@ fn read_i32(data : Bytes, p : Int) -> Int raise ArrowError {
 }
 
 ///|
-fn read_i64(data : Bytes, p : Int) -> Int64 raise ArrowError {
+fn read_i64(data : Bytes, p : Int32) -> Int64 raise ArrowError {
   check_range(data, p, 8)
   let mut value = 0L
   for i in 0..<8 {
@@ -40,7 +44,7 @@ fn read_i64(data : Bytes, p : Int) -> Int64 raise ArrowError {
 }
 
 ///|
-fn read_fixed(data : Bytes, p : Int, width : Int) -> Int64 raise ArrowError {
+fn read_fixed(data : Bytes, p : Int32, width : Int32) -> Int64 raise ArrowError {
   check_range(data, p, width)
   let mut bits = 0L
   for i in 0..<width {
@@ -50,13 +54,18 @@ fn read_fixed(data : Bytes, p : Int, width : Int) -> Int64 raise ArrowError {
 }
 
 ///|
-fn signed_fixed(value : Int64, width : Int) -> Int {
+fn signed_fixed(value : Int64, width : Int32) -> Int32 {
   let shift = 64 - width * 8
   (value << shift >> shift).to_int()
 }
 
 ///|
-fn put_fixed(out : Array[Byte], p : Int, value : Int64, width : Int) -> Unit {
+fn put_fixed(
+  out : Array[Byte],
+  p : Int32,
+  value : Int64,
+  width : Int32,
+) -> Unit {
   for i in 0..<width {
     out[p + i] = ((value >> (8 * i)) & 255L).to_byte()
   }
@@ -65,9 +74,9 @@ fn put_fixed(out : Array[Byte], p : Int, value : Int64, width : Int) -> Unit {
 ///|
 fn bounded_i64(
   value : Int64,
-  limit : Int,
+  limit : Int32,
   what : String,
-) -> Int raise ArrowError {
+) -> Int32 raise ArrowError {
   if value < 0L {
     raise Invalid("negative " + what)
   }
@@ -78,13 +87,13 @@ fn bounded_i64(
 }
 
 ///|
-fn slice_bytes(data : Bytes, p : Int, size : Int) -> Bytes raise ArrowError {
+fn slice_bytes(data : Bytes, p : Int32, size : Int32) -> Bytes raise ArrowError {
   check_range(data, p, size)
   data.exact_view(start=p, end=p + size).to_owned()
 }
 
 ///|
-fn decode_utf8(data : Bytes, p : Int, n : Int) -> String raise ArrowError {
+fn decode_utf8(data : Bytes, p : Int32, n : Int32) -> String raise ArrowError {
   check_range(data, p, n)
   @utf8.decode(data.exact_view(start=p, end=p + n), ignore_bom=false) catch {
     _ => raise Invalid("invalid UTF-8")
@@ -92,28 +101,28 @@ fn decode_utf8(data : Bytes, p : Int, n : Int) -> String raise ArrowError {
 }
 
 ///|
-fn put_u16(out : Array[Byte], p : Int, value : Int) -> Unit {
+fn put_u16(out : Array[Byte], p : Int32, value : Int32) -> Unit {
   for i in 0..<2 {
     out[p + i] = ((value >> (8 * i)) & 255).to_byte()
   }
 }
 
 ///|
-fn put_i32(out : Array[Byte], p : Int, value : Int) -> Unit {
+fn put_i32(out : Array[Byte], p : Int32, value : Int32) -> Unit {
   for i in 0..<4 {
     out[p + i] = ((value >> (8 * i)) & 255).to_byte()
   }
 }
 
 ///|
-fn put_i64(out : Array[Byte], p : Int, value : Int64) -> Unit {
+fn put_i64(out : Array[Byte], p : Int32, value : Int64) -> Unit {
   for i in 0..<8 {
     out[p + i] = ((value >> (8 * i)) & 255L).to_byte()
   }
 }
 
 ///|
-fn reserve(out : Array[Byte], n : Int) -> Int {
+fn reserve(out : Array[Byte], n : Int32) -> Int32 {
   let start = out.length()
   for _ in 0..<n {
     out.push(b'\x00')
@@ -122,7 +131,7 @@ fn reserve(out : Array[Byte], n : Int) -> Int {
 }
 
 ///|
-fn align_bytes(out : Array[Byte], alignment : Int) -> Unit {
+fn align_bytes(out : Array[Byte], alignment : Int32) -> Unit {
   while out.length() % alignment != 0 {
     out.push(b'\x00')
   }
@@ -139,12 +148,12 @@ fn append_bytes(out : Array[Byte], data : Bytes) -> Unit {
 /// A private, forward-building FlatBuffer codec for Arrow metadata only.
 /// Every table slot occupies eight bytes so all scalar types are aligned.
 priv struct FbTable {
-  pos : Int
-  vtable : Int
+  pos : Int32
+  vtable : Int32
 }
 
 ///|
-fn fb_table(out : Array[Byte], slots : Int) -> FbTable {
+fn fb_table(out : Array[Byte], slots : Int32) -> FbTable {
   align_bytes(out, 2)
   let vtable = reserve(out, 4 + 2 * slots)
   align_bytes(out, 8)
@@ -156,14 +165,19 @@ fn fb_table(out : Array[Byte], slots : Int) -> FbTable {
 }
 
 ///|
-fn fb_slot(out : Array[Byte], table : FbTable, slot : Int) -> Int {
+fn fb_slot(out : Array[Byte], table : FbTable, slot : Int32) -> Int32 {
   let offset = 8 + 8 * slot
   put_u16(out, table.vtable + 4 + slot * 2, offset)
   table.pos + offset
 }
 
 ///|
-fn fb_int(out : Array[Byte], table : FbTable, slot : Int, value : Int) -> Unit {
+fn fb_int(
+  out : Array[Byte],
+  table : FbTable,
+  slot : Int32,
+  value : Int32,
+) -> Unit {
   put_i32(out, fb_slot(out, table, slot), value)
 }
 
@@ -171,20 +185,25 @@ fn fb_int(out : Array[Byte], table : FbTable, slot : Int, value : Int) -> Unit {
 fn fb_long(
   out : Array[Byte],
   table : FbTable,
-  slot : Int,
+  slot : Int32,
   value : Int64,
 ) -> Unit {
   put_i64(out, fb_slot(out, table, slot), value)
 }
 
 ///|
-fn fb_ref(out : Array[Byte], table : FbTable, slot : Int, target : Int) -> Unit {
+fn fb_ref(
+  out : Array[Byte],
+  table : FbTable,
+  slot : Int32,
+  target : Int32,
+) -> Unit {
   let p = fb_slot(out, table, slot)
   put_i32(out, p, target - p)
 }
 
 ///|
-fn fb_string(out : Array[Byte], value : String) -> Int {
+fn fb_string(out : Array[Byte], value : String) -> Int32 {
   let bytes = @utf8.encode(value)
   align_bytes(out, 4)
   let pos = reserve(out, 4)
@@ -197,10 +216,10 @@ fn fb_string(out : Array[Byte], value : String) -> Int {
 ///|
 fn fb_vector(
   out : Array[Byte],
-  count : Int,
-  width : Int,
-  alignment : Int,
-) -> Int {
+  count : Int32,
+  width : Int32,
+  alignment : Int32,
+) -> Int32 {
   align_bytes(out, 4)
   while (out.length() + 4) % alignment != 0 {
     out.push(b'\x00')
@@ -211,7 +230,7 @@ fn fb_vector(
 }
 
 ///|
-fn follow_offset(data : Bytes, p : Int) -> Int raise ArrowError {
+fn follow_offset(data : Bytes, p : Int32) -> Int32 raise ArrowError {
   let n = read_i32(data, p)
   if n < 4 || n > data.length() - p {
     raise Invalid("invalid FlatBuffer offset")
@@ -224,10 +243,10 @@ fn follow_offset(data : Bytes, p : Int) -> Int raise ArrowError {
 ///|
 fn table_field(
   data : Bytes,
-  table : Int,
-  slot : Int,
-  size : Int,
-) -> Int? raise ArrowError {
+  table : Int32,
+  slot : Int32,
+  size : Int32,
+) -> Int32? raise ArrowError {
   let displacement = read_i32(data, table).to_int64()
   let v64 = table.to_int64() - displacement
   if displacement == 0L || v64 < 0L || v64 > data.length().to_int64() {
@@ -257,11 +276,11 @@ fn table_field(
 ///|
 fn field_int(
   data : Bytes,
-  table : Int,
-  slot : Int,
-  size : Int,
-  default : Int,
-) -> Int raise ArrowError {
+  table : Int32,
+  slot : Int32,
+  size : Int32,
+  default : Int32,
+) -> Int32 raise ArrowError {
   match table_field(data, table, slot, size) {
     None => default
     Some(p) =>
@@ -274,7 +293,11 @@ fn field_int(
 }
 
 ///|
-fn field_long(data : Bytes, table : Int, slot : Int) -> Int64 raise ArrowError {
+fn field_long(
+  data : Bytes,
+  table : Int32,
+  slot : Int32,
+) -> Int64 raise ArrowError {
   match table_field(data, table, slot, 8) {
     None => 0L
     Some(p) => read_i64(data, p)
@@ -282,7 +305,11 @@ fn field_long(data : Bytes, table : Int, slot : Int) -> Int64 raise ArrowError {
 }
 
 ///|
-fn field_ref(data : Bytes, table : Int, slot : Int) -> Int? raise ArrowError {
+fn field_ref(
+  data : Bytes,
+  table : Int32,
+  slot : Int32,
+) -> Int32? raise ArrowError {
   match table_field(data, table, slot, 4) {
     None => None
     Some(p) => Some(follow_offset(data, p))
@@ -290,7 +317,11 @@ fn field_ref(data : Bytes, table : Int, slot : Int) -> Int? raise ArrowError {
 }
 
 ///|
-fn required_ref(data : Bytes, table : Int, slot : Int) -> Int raise ArrowError {
+fn required_ref(
+  data : Bytes,
+  table : Int32,
+  slot : Int32,
+) -> Int32 raise ArrowError {
   match field_ref(data, table, slot) {
     Some(p) => p
     None => raise Invalid("missing required FlatBuffer field")
@@ -298,7 +329,7 @@ fn required_ref(data : Bytes, table : Int, slot : Int) -> Int raise ArrowError {
 }
 
 ///|
-fn read_string(data : Bytes, p : Int) -> String raise ArrowError {
+fn read_string(data : Bytes, p : Int32) -> String raise ArrowError {
   let n = read_i32(data, p)
   if n < 0 || n >= data.length() - p - 4 {
     raise Invalid("invalid string length")
@@ -312,11 +343,11 @@ fn read_string(data : Bytes, p : Int) -> String raise ArrowError {
 ///|
 fn vector_info(
   data : Bytes,
-  table : Int,
-  slot : Int,
-  width : Int,
-  limit : Int,
-) -> (Int, Int) raise ArrowError {
+  table : Int32,
+  slot : Int32,
+  width : Int32,
+  limit : Int32,
+) -> (Int32, Int32) raise ArrowError {
   match field_ref(data, table, slot) {
     None => (0, 0)
     Some(p) => {

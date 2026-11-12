@@ -18,7 +18,7 @@ fn copy_schema(schema : Schema) -> Schema {
 }
 
 ///|
-fn[T] take_values(values : Array[T], indices : Array[Int]) -> Array[T] {
+fn[T] take_values(values : Array[T], indices : Array[Int32]) -> Array[T] {
   Array::makei(indices.length(), i => values[indices[i]])
 }
 
@@ -35,7 +35,7 @@ fn[T] append_values(left : Array[T], right : Array[T]) -> Array[T] {
 }
 
 ///|
-fn Column::take_checked(self : Column, indices : Array[Int]) -> Column {
+fn Column::take_checked(self : Column, indices : Array[Int32]) -> Column {
   match self {
     Nulls(_) => Nulls(indices.length())
     Booleans(a) => Booleans(take_values(a, indices))
@@ -249,7 +249,7 @@ fn Column::append_checked(
 /// The result has fresh mutable column, field and metadata arrays.
 pub fn RecordBatch::project(
   self : RecordBatch,
-  indices : Array[Int],
+  indices : Array[Int32],
 ) -> RecordBatch raise ArrowError {
   self.validate()
   let fields = []
@@ -275,7 +275,7 @@ pub fn RecordBatch::project(
 /// Take rows in arbitrary order. Repeated indices are preserved.
 pub fn RecordBatch::take(
   self : RecordBatch,
-  indices : Array[Int],
+  indices : Array[Int32],
 ) -> RecordBatch raise ArrowError {
   self.validate()
   for index in indices {
@@ -294,8 +294,8 @@ pub fn RecordBatch::take(
 /// Copy a contiguous range of rows. A zero-length slice at the end is valid.
 pub fn RecordBatch::slice(
   self : RecordBatch,
-  start : Int,
-  length : Int,
+  start : Int32,
+  length : Int32,
 ) -> RecordBatch raise ArrowError {
   self.validate()
   if start < 0 ||

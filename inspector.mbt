@@ -1,40 +1,44 @@
 ///|
+#derive(Eq, Debug)
 pub(all) enum MessageKind {
   SchemaMessage
   DictionaryMessage
   BatchMessage
-} derive(Eq, Debug)
+}
 
 ///|
 /// Metadata-only description of a framed IPC message. Inspectors validate
 /// framing and metadata bounds, but do not decode every record batch body.
+#derive(Debug)
 pub(all) struct MessageInfo {
-  offset : Int
-  metadata_bytes : Int
-  body_bytes : Int
+  offset : Int32
+  metadata_bytes : Int32
+  body_bytes : Int32
   kind : MessageKind
-  rows : Int?
+  rows : Int32?
   dictionary_id : Int64?
-} derive(Debug)
+}
 
 ///|
+#derive(Debug)
 pub struct StreamIndex {
   schema : Schema
   messages : Array[MessageInfo]
   has_eos : Bool
-} derive(Debug)
+}
 
 ///|
+#derive(Debug)
 pub struct FileIndex {
   schema : Schema
   batches : Array[MessageInfo]
   dictionaries : Array[MessageInfo]
-} derive(Debug)
+}
 
 ///|
 fn frame_info(
   frame : Frame,
-  offset : Int,
+  offset : Int32,
   limits : ReadLimits,
 ) -> MessageInfo raise ArrowError {
   let (kind, rows, dictionary_id) = match frame.kind {
@@ -76,7 +80,7 @@ fn frame_info(
 /// Scan a stream's message framing without materializing its batches.
 pub fn inspect_stream(
   bytes : Bytes,
-  limits? : ReadLimits = ReadLimits::default(),
+  limits~ : ReadLimits = ReadLimits::default(),
 ) -> StreamIndex raise ArrowError {
   limits.validate()
   let first = match read_frame(bytes, 0, bytes.length(), limits) {
@@ -125,7 +129,7 @@ pub fn inspect_stream(
 /// Inspect indexed Arrow file blocks without decoding record batch values.
 pub fn inspect_file(
   bytes : Bytes,
-  limits? : ReadLimits = ReadLimits::default(),
+  limits~ : ReadLimits = ReadLimits::default(),
 ) -> FileIndex raise ArrowError {
   let reader = FileReader::new(bytes, limits~)
   let footer_size = read_i32(bytes, bytes.length() - 10)
@@ -155,7 +159,7 @@ pub fn inspect_file(
 }
 
 ///|
-pub fn StreamIndex::num_batches(self : StreamIndex) -> Int {
+pub fn StreamIndex::num_batches(self : StreamIndex) -> Int32 {
   let mut count = 0
   for info in self.messages {
     if info.kind == BatchMessage {
@@ -166,7 +170,7 @@ pub fn StreamIndex::num_batches(self : StreamIndex) -> Int {
 }
 
 ///|
-pub fn StreamIndex::num_dictionaries(self : StreamIndex) -> Int {
+pub fn StreamIndex::num_dictionaries(self : StreamIndex) -> Int32 {
   let mut count = 0
   for info in self.messages {
     if info.kind == DictionaryMessage {
@@ -186,12 +190,12 @@ pub fn StreamIndex::total_body_bytes(self : StreamIndex) -> Int64 {
 }
 
 ///|
-pub fn FileIndex::num_batches(self : FileIndex) -> Int {
+pub fn FileIndex::num_batches(self : FileIndex) -> Int32 {
   self.batches.length()
 }
 
 ///|
-pub fn FileIndex::num_dictionaries(self : FileIndex) -> Int {
+pub fn FileIndex::num_dictionaries(self : FileIndex) -> Int32 {
   self.dictionaries.length()
 }
 

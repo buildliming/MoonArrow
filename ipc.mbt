@@ -57,17 +57,17 @@ pub struct StreamReader {
   schema : Schema
   priv data : Bytes
   priv limits : ReadLimits
-  priv mut offset : Int
-  priv mut count : Int
+  priv mut offset : Int32
+  priv mut count : Int32
   priv mut finished : Bool
   priv dictionaries : Array[DictionaryEntry]
-  priv mut dictionary_messages : Int
+  priv mut dictionary_messages : Int32
 }
 
 ///|
 pub fn StreamReader::new(
   data : Bytes,
-  limits? : ReadLimits = ReadLimits::default(),
+  limits~ : ReadLimits = ReadLimits::default(),
 ) -> StreamReader raise ArrowError {
   limits.validate()
   let frame = match read_frame(data, 0, data.length(), limits) {
@@ -133,7 +133,7 @@ pub fn StreamReader::next(self : StreamReader) -> RecordBatch? raise ArrowError 
 /// Read and materialize all batches of an IPC stream.
 pub fn read_stream(
   data : Bytes,
-  limits? : ReadLimits = ReadLimits::default(),
+  limits~ : ReadLimits = ReadLimits::default(),
 ) -> IpcData raise ArrowError {
   let reader = StreamReader::new(data, limits~)
   let batches = []
@@ -145,9 +145,9 @@ pub fn read_stream(
 
 ///|
 priv struct FileBlock {
-  offset : Int
-  metadata_size : Int
-  body_size : Int
+  offset : Int32
+  metadata_size : Int32
+  body_size : Int32
 }
 
 ///|
@@ -254,10 +254,10 @@ pub struct FileReader {
 ///|
 fn file_blocks(
   footer : Bytes,
-  root : Int,
-  slot : Int,
+  root : Int32,
+  slot : Int32,
   limits : ReadLimits,
-  footer_start : Int,
+  footer_start : Int32,
 ) -> Array[FileBlock] raise ArrowError {
   let limit = if slot == 2 {
     limits.max_dictionary_messages
@@ -297,7 +297,7 @@ fn file_blocks(
 ///|
 pub fn FileReader::new(
   data : Bytes,
-  limits? : ReadLimits = ReadLimits::default(),
+  limits~ : ReadLimits = ReadLimits::default(),
 ) -> FileReader raise ArrowError {
   limits.validate()
   if data.length() < 18 ||
@@ -385,7 +385,7 @@ pub fn FileReader::new(
 }
 
 ///|
-pub fn FileReader::num_batches(self : FileReader) -> Int {
+pub fn FileReader::num_batches(self : FileReader) -> Int32 {
   self.blocks.length()
 }
 
@@ -397,7 +397,7 @@ pub fn FileReader::is_empty(self : FileReader) -> Bool {
 ///|
 pub fn FileReader::get_batch(
   self : FileReader,
-  index : Int,
+  index : Int32,
 ) -> RecordBatch raise ArrowError {
   if index < 0 || index >= self.blocks.length() {
     raise Invalid("batch index out of range")
@@ -423,7 +423,7 @@ pub fn FileReader::get_batch(
 ///|
 pub fn read_file(
   data : Bytes,
-  limits? : ReadLimits = ReadLimits::default(),
+  limits~ : ReadLimits = ReadLimits::default(),
 ) -> IpcData raise ArrowError {
   let reader = FileReader::new(data, limits~)
   let batches = []

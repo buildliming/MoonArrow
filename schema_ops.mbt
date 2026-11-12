@@ -3,7 +3,7 @@
 pub fn Schema::field_index(
   self : Schema,
   name : String,
-) -> Int raise ArrowError {
+) -> Int32 raise ArrowError {
   let mut found = -1
   for i in 0..<self.fields.length() {
     if self.fields[i].name == name {
@@ -23,7 +23,7 @@ pub fn Schema::field_index(
 /// Select schema fields by index while copying field and metadata arrays.
 pub fn Schema::project(
   self : Schema,
-  indices : Array[Int],
+  indices : Array[Int32],
 ) -> Schema raise ArrowError {
   let fields = []
   for index in indices {
@@ -38,7 +38,7 @@ pub fn Schema::project(
 ///|
 pub fn Schema::rename(
   self : Schema,
-  index : Int,
+  index : Int32,
   name : String,
 ) -> Schema raise ArrowError {
   if index < 0 || index >= self.fields.length() {
@@ -59,7 +59,7 @@ pub fn Schema::rename(
 ///|
 pub fn Schema::drop_field(
   self : Schema,
-  index : Int,
+  index : Int32,
 ) -> Schema raise ArrowError {
   if index < 0 || index >= self.fields.length() {
     raise Invalid("drop field index out of range")
@@ -76,7 +76,7 @@ pub fn Schema::drop_field(
 ///|
 pub fn Table::rename(
   self : Table,
-  index : Int,
+  index : Int32,
   name : String,
 ) -> Table raise ArrowError {
   let schema = self.schema.rename(index, name)
@@ -88,7 +88,10 @@ pub fn Table::rename(
 }
 
 ///|
-pub fn Table::drop_column(self : Table, index : Int) -> Table raise ArrowError {
+pub fn Table::drop_column(
+  self : Table,
+  index : Int32,
+) -> Table raise ArrowError {
   let schema = self.schema.drop_field(index)
   let batches = []
   for batch in self.batches {
@@ -126,7 +129,7 @@ pub fn Table::select(
 /// Rename a field without changing its data type, metadata or values.
 pub fn RecordBatch::rename(
   self : RecordBatch,
-  index : Int,
+  index : Int32,
   name : String,
 ) -> RecordBatch raise ArrowError {
   self.validate()
@@ -153,7 +156,7 @@ pub fn RecordBatch::rename(
 /// Replace a column and its field together, keeping the same row count.
 pub fn RecordBatch::replace_column(
   self : RecordBatch,
-  index : Int,
+  index : Int32,
   field : Field,
   column : Column,
 ) -> RecordBatch raise ArrowError {
@@ -181,7 +184,7 @@ pub fn RecordBatch::replace_column(
 /// Insert one field and column at index, including at the end of a batch.
 pub fn RecordBatch::insert_column(
   self : RecordBatch,
-  index : Int,
+  index : Int32,
   field : Field,
   column : Column,
 ) -> RecordBatch raise ArrowError {
@@ -216,7 +219,7 @@ pub fn RecordBatch::insert_column(
 ///|
 pub fn RecordBatch::drop_column(
   self : RecordBatch,
-  index : Int,
+  index : Int32,
 ) -> RecordBatch raise ArrowError {
   if index < 0 || index >= self.columns.length() {
     raise Invalid("drop field index out of range")
@@ -234,7 +237,7 @@ pub fn RecordBatch::drop_column(
 /// Split one batch into smaller batches; a zero-row batch remains one batch.
 pub fn RecordBatch::split_rows(
   self : RecordBatch,
-  max_rows : Int,
+  max_rows : Int32,
 ) -> Array[RecordBatch] raise ArrowError {
   self.validate()
   if max_rows <= 0 {

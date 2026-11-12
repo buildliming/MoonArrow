@@ -1,29 +1,31 @@
 ///|
 /// Physical value range for a column. Float ranges ignore NaN values; all
 /// null slots are excluded. Byte lengths count encoded UTF-8 bytes for text.
+#derive(Debug)
 pub(all) enum ColumnRange {
   NoRange
-  IntRange(Int, Int)
+  IntRange(Int32, Int32)
   Int64Range(Int64, Int64)
-  UIntRange(UInt, UInt)
+  UIntRange(UInt32, UInt32)
   UInt64Range(UInt64, UInt64)
   Float32Range(Float, Float)
   Float64Range(Double, Double)
-  ByteLengthRange(Int, Int, Int64)
-  BooleanCounts(Int, Int)
-} derive(Debug)
+  ByteLengthRange(Int32, Int32, Int64)
+  BooleanCounts(Int32, Int32)
+}
 
 ///|
+#derive(Debug)
 pub(all) struct ColumnSummary {
-  length : Int
-  null_count : Int
+  length : Int32
+  null_count : Int32
   range : ColumnRange
-} derive(Debug)
+}
 
 ///|
-fn summarize_int(values : Array[Int?]) -> ColumnRange {
-  let mut low : Int? = None
-  let mut high : Int? = None
+fn summarize_int(values : Array[Int32?]) -> ColumnRange {
+  let mut low : Int32? = None
+  let mut high : Int32? = None
   for value in values {
     if value is Some(x) {
       low = Some(if low is Some(v) { if x < v { x } else { v } } else { x })
@@ -53,9 +55,9 @@ fn summarize_int64(values : Array[Int64?]) -> ColumnRange {
 }
 
 ///|
-fn summarize_uint(values : Array[UInt?]) -> ColumnRange {
-  let mut low : UInt? = None
-  let mut high : UInt? = None
+fn summarize_uint(values : Array[UInt32?]) -> ColumnRange {
+  let mut low : UInt32? = None
+  let mut high : UInt32? = None
   for value in values {
     if value is Some(x) {
       low = Some(if low is Some(v) { if x < v { x } else { v } } else { x })
@@ -141,7 +143,10 @@ fn summarize_lengths(values : Array[Bytes?]) -> ColumnRange {
 }
 
 ///|
-fn summarize_offsets(offsets : Array[Int], valid : Array[Bool]) -> ColumnRange {
+fn summarize_offsets(
+  offsets : Array[Int32],
+  valid : Array[Bool],
+) -> ColumnRange {
   let mut low = 0x7fffffff
   let mut high = 0
   let mut total = 0L
@@ -301,7 +306,7 @@ pub fn Table::summaries(self : Table) -> Array[ColumnSummary] raise ArrowError {
 
 ///|
 /// Count null slots in each table column without constructing row scalars.
-pub fn Table::null_counts(self : Table) -> Array[Int] {
+pub fn Table::null_counts(self : Table) -> Array[Int32] {
   let counts = Array::make(self.schema.fields.length(), 0)
   for batch in self.batches {
     for i in 0..<counts.length() {

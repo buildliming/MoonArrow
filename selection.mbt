@@ -2,7 +2,7 @@
 /// Copy selected column slots in arbitrary order. Duplicate indices are kept.
 pub fn Column::take(
   self : Column,
-  indices : Array[Int],
+  indices : Array[Int32],
 ) -> Column raise ArrowError {
   for index in indices {
     if index < 0 || index >= self.length() {
@@ -15,8 +15,8 @@ pub fn Column::take(
 ///|
 pub fn Column::slice(
   self : Column,
-  start : Int,
-  length : Int,
+  start : Int32,
+  length : Int32,
 ) -> Column raise ArrowError {
   if start < 0 ||
     length < 0 ||
@@ -67,7 +67,7 @@ pub fn Table::partition_where(
 ///|
 pub fn RecordBatch::head(
   self : RecordBatch,
-  count : Int,
+  count : Int32,
 ) -> RecordBatch raise ArrowError {
   if count < 0 {
     raise Invalid("negative head count")
@@ -78,7 +78,7 @@ pub fn RecordBatch::head(
 ///|
 pub fn RecordBatch::tail(
   self : RecordBatch,
-  count : Int,
+  count : Int32,
 ) -> RecordBatch raise ArrowError {
   if count < 0 {
     raise Invalid("negative tail count")
@@ -88,7 +88,7 @@ pub fn RecordBatch::tail(
 }
 
 ///|
-pub fn Table::head(self : Table, count : Int) -> Table raise ArrowError {
+pub fn Table::head(self : Table, count : Int32) -> Table raise ArrowError {
   if count < 0 {
     raise Invalid("negative head count")
   }
@@ -103,7 +103,7 @@ pub fn Table::head(self : Table, count : Int) -> Table raise ArrowError {
 }
 
 ///|
-pub fn Table::tail(self : Table, count : Int) -> Table raise ArrowError {
+pub fn Table::tail(self : Table, count : Int32) -> Table raise ArrowError {
   if count < 0 {
     raise Invalid("negative tail count")
   }
@@ -116,11 +116,11 @@ pub fn Table::tail(self : Table, count : Int) -> Table raise ArrowError {
 /// The output is a Table because source rows may come from separate batches.
 pub fn Table::take_rows(
   self : Table,
-  indices : Array[Int],
+  indices : Array[Int32],
 ) -> Table raise ArrowError {
   let selected = []
   let mut source_batch = -1
-  let mut local_indices : Array[Int] = []
+  let mut local_indices : Array[Int32] = []
   for index in indices {
     if index < 0 || index >= self.num_rows() {
       raise Invalid("table row index out of range")

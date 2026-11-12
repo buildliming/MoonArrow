@@ -30,7 +30,7 @@ test "table slices across batches and preserves row order" {
 ///|
 test "table owns input arrays and rejects incompatible append" {
   let schema = @arrow.Schema::new([@arrow.Field::new("id", Int32)])
-  let values : Array[Int?] = [Some(1)]
+  let values : Array[Int32?] = [Some(1)]
   let batch = @arrow.RecordBatch::new(schema, [Int32s(values)])
   let table = @arrow.Table::new(schema, [batch])
   values[0] = Some(9)

@@ -1,22 +1,25 @@
 ///|
 /// Errors for malformed input, unsupported features, and invalid batches.
+#derive(Debug)
 pub(all) suberror ArrowError {
   Invalid(String)
   Unsupported(String)
   LimitExceeded(String)
-} derive(Debug)
+}
 
 ///|
 /// Resolution of a timestamp or duration. No timezone conversion is implied.
+#derive(Eq, Debug)
 pub(all) enum TimeUnit {
   Second
   Millisecond
   Microsecond
   Nanosecond
-} derive(Eq, Debug)
+}
 
 ///|
 /// Data types supported by the current Arrow IPC subset.
+#derive(Eq, Debug)
 pub(all) enum DataType {
   Null
   Boolean
@@ -36,7 +39,7 @@ pub(all) enum DataType {
   Duration(TimeUnit)
   List
   LargeList
-  FixedSizeList(Int)
+  FixedSizeList(Int32)
   Map(Bool)
   Struct
   Dictionary(Int64, DataType, Bool)
@@ -44,92 +47,96 @@ pub(all) enum DataType {
   Binary
   LargeUtf8
   LargeBinary
-  FixedSizeBinary(Int)
-} derive(Eq, Debug)
+  FixedSizeBinary(Int32)
+}
 
 ///|
 /// UTF-8 key/value metadata. Order and duplicate keys are preserved.
+#derive(Eq, Debug)
 pub(all) struct KeyValue {
   key : String
   value : String?
-} derive(Eq, Debug)
+}
 
 ///|
 /// A named field. Extension metadata is preserved without interpreting it.
+#derive(Eq, Debug)
 pub(all) struct Field {
   name : String
   data_type : DataType
   nullable : Bool
   metadata : Array[KeyValue]
   children : Array[Field]
-} derive(Eq, Debug)
+}
 
 ///|
 pub fn Field::new(
   name : String,
   data_type : DataType,
-  nullable? : Bool = true,
-  metadata? : Array[KeyValue] = [],
-  children? : Array[Field] = [],
+  nullable~ : Bool = true,
+  metadata~ : Array[KeyValue] = [],
+  children~ : Array[Field] = [],
 ) -> Field {
   { name, data_type, nullable, metadata, children, }
 }
 
 ///|
 /// A schema, including ordered custom metadata.
+#derive(Eq, Debug)
 pub(all) struct Schema {
   fields : Array[Field]
   metadata : Array[KeyValue]
-} derive(Eq, Debug)
+}
 
 ///|
 pub fn Schema::new(
   fields : Array[Field],
-  metadata? : Array[KeyValue] = [],
+  metadata~ : Array[KeyValue] = [],
 ) -> Schema {
   { fields, metadata, }
 }
 
 ///|
-pub fn Schema::num_fields(self : Schema) -> Int {
+pub fn Schema::num_fields(self : Schema) -> Int32 {
   self.fields.length()
 }
 
 ///|
 /// Owned, decoded column values. None represents an Arrow null slot.
 /// Binary data is never interpreted as text; Int64 values retain all 64 bits.
+#derive(Debug)
 pub(all) enum Column {
-  Nulls(Int)
+  Nulls(Int32)
   Booleans(Array[Bool?])
-  Int8s(Array[Int?])
-  Int16s(Array[Int?])
-  Int32s(Array[Int?])
+  Int8s(Array[Int32?])
+  Int16s(Array[Int32?])
+  Int32s(Array[Int32?])
   Int64s(Array[Int64?])
-  UInt8s(Array[Int?])
-  UInt16s(Array[Int?])
-  UInt32s(Array[UInt?])
+  UInt8s(Array[Int32?])
+  UInt16s(Array[Int32?])
+  UInt32s(Array[UInt32?])
   UInt64s(Array[UInt64?])
   Float32s(Array[Float?])
   Float64s(Array[Double?])
-  Date32s(Array[Int?])
+  Date32s(Array[Int32?])
   Date64s(Array[Int64?])
   Timestamps(Array[Int64?], TimeUnit, String?)
   Durations(Array[Int64?], TimeUnit)
-  Lists(Array[Int], Array[Bool], Column)
-  LargeLists(Array[Int], Array[Bool], Column)
-  FixedLists(Array[Bool], Column, Int)
-  Maps(Array[Int], Array[Bool], Column, Bool)
+  Lists(Array[Int32], Array[Bool], Column)
+  LargeLists(Array[Int32], Array[Bool], Column)
+  FixedLists(Array[Bool], Column, Int32)
+  Maps(Array[Int32], Array[Bool], Column, Bool)
   Structs(Array[Bool], Array[Column])
-  Dictionaries(Array[Int?], Column, Int64, Bool)
+  Dictionaries(Array[Int32?], Column, Int64, Bool)
   Strings(Array[String?])
   Binaries(Array[Bytes?])
   LargeStrings(Array[String?])
   LargeBinaries(Array[Bytes?])
-  FixedBinaries(Array[Bytes?], Int)
-} derive(Debug)
+  FixedBinaries(Array[Bytes?], Int32)
+}
 
 ///|
-pub fn Column::length(self : Column) -> Int {
+pub fn Column::length(self : Column) -> Int32 {
   match self {
     Nulls(n) => n
     Booleans(a) => a.length()
@@ -196,7 +203,7 @@ pub fn Column::data_type(self : Column) -> DataType {
 }
 
 ///|
-fn Column::valid_at(self : Column, i : Int) -> Bool {
+fn Column::valid_at(self : Column, i : Int32) -> Bool {
   match self {
     Nulls(_) => false
     Booleans(a) => a[i] is Some(_)
@@ -229,7 +236,7 @@ fn Column::valid_at(self : Column, i : Int) -> Bool {
 }
 
 ///|
-pub fn Column::null_count(self : Column) -> Int {
+pub fn Column::null_count(self : Column) -> Int32 {
   let mut count = 0
   for i in 0..<self.length() {
     if !self.valid_at(i) {
@@ -241,18 +248,19 @@ pub fn Column::null_count(self : Column) -> Int {
 
 ///|
 /// A batch of equal-length columns. Writers revalidate mutable column arrays.
+#derive(Debug)
 pub struct RecordBatch {
   schema : Schema
   columns : Array[Column]
-  num_rows : Int
-} derive(Debug)
+  num_rows : Int32
+}
 
 ///|
 /// num_rows is required only to represent nonzero rows with zero columns.
 pub fn RecordBatch::new(
   schema : Schema,
   columns : Array[Column],
-  num_rows? : Int,
+  num_rows? : Int32,
 ) -> RecordBatch raise ArrowError {
   let rows = match num_rows {
     Some(n) => n
@@ -297,7 +305,7 @@ pub fn RecordBatch::is_empty(self : RecordBatch) -> Bool {
 fn validate_nested(
   field : Field,
   column : Column,
-  depth : Int,
+  depth : Int32,
 ) -> Unit raise ArrowError {
   if depth > 64 {
     raise LimitExceeded("nested depth")
@@ -432,17 +440,18 @@ fn validate_nested(
 
 ///|
 /// Limits are checked before allocating decoded arrays. Input bytes are caller-owned.
+#derive(Debug)
 pub(all) struct ReadLimits {
-  max_rows_per_batch : Int
-  max_values_per_batch : Int
-  max_fields : Int
-  max_batches : Int
-  max_metadata_bytes : Int
-  max_body_bytes : Int
-  max_depth : Int
-  max_dictionary_values : Int
-  max_dictionary_messages : Int
-} derive(Debug)
+  max_rows_per_batch : Int32
+  max_values_per_batch : Int32
+  max_fields : Int32
+  max_batches : Int32
+  max_metadata_bytes : Int32
+  max_body_bytes : Int32
+  max_depth : Int32
+  max_dictionary_values : Int32
+  max_dictionary_messages : Int32
+}
 
 ///|
 pub fn ReadLimits::default() -> ReadLimits {
@@ -476,7 +485,8 @@ fn ReadLimits::validate(self : ReadLimits) -> Unit raise ArrowError {
 
 ///|
 /// Materialized IPC data. For batch-at-a-time decoding use StreamReader/FileReader.
+#derive(Debug)
 pub struct IpcData {
   schema : Schema
   batches : Array[RecordBatch]
-} derive(Debug)
+}

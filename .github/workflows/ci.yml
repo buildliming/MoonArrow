@@ -3,24 +3,42 @@ on:
   push:
   pull_request:
   workflow_dispatch:
+  schedule:
+    - cron: '0 2 * * 3'
 permissions:
   contents: read
 jobs:
   verify:
+    name: ${{ matrix.os }} / ${{ matrix.toolchain }}
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest]
+        toolchain: ['0.10.20+65efd5b93', latest]
     runs-on: ${{ matrix.os }}
+    env:
+      MOONBIT_INSTALL_VERSION: ${{ matrix.toolchain }}
     steps:
       - uses: actions/checkout@v5
-      - uses: hustcer/setup-moonbit@v1.22
-        with:
-          version: '0.10.14+7d59c7ec9'
-          core-version: '0.10.14+7d59c7ec9'
+      - name: Install official MoonBit toolchain on Linux
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          curl -fsSL https://cli.moonbitlang.com/install/unix.sh -o "$RUNNER_TEMP/install-moonbit.sh"
+          bash "$RUNNER_TEMP/install-moonbit.sh" "$MOONBIT_INSTALL_VERSION"
+          echo "$HOME/.moon/bin" >> "$GITHUB_PATH"
+      - name: Install official MoonBit toolchain on Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Invoke-WebRequest https://cli.moonbitlang.com/install/powershell.ps1 -OutFile "$env:RUNNER_TEMP/install-moonbit.ps1"
+          & "$env:RUNNER_TEMP/install-moonbit.ps1"
+          "$env:USERPROFILE/.moon/bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+      - uses: ilammy/msvc-dev-cmd@v1
+        if: runner.os == 'Windows'
       - uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version: '24'
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
@@ -29,6 +47,6 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: validation-${{ matrix.os }}
+          name: validation-${{ matrix.os }}-${{ matrix.toolchain }}
           path: outputs/validation.json
           if-no-files-found: warn

@@ -1,18 +1,19 @@
 ///|
 /// A typed value for row-wise construction. None represents an Arrow null.
+#derive(Debug)
 pub(all) enum Value {
   BooleanValue(Bool)
-  Int8Value(Int)
-  Int16Value(Int)
-  Int32Value(Int)
+  Int8Value(Int32)
+  Int16Value(Int32)
+  Int32Value(Int32)
   Int64Value(Int64)
-  UInt8Value(Int)
-  UInt16Value(Int)
-  UInt32Value(UInt)
+  UInt8Value(Int32)
+  UInt16Value(Int32)
+  UInt32Value(UInt32)
   UInt64Value(UInt64)
   Float32Value(Float)
   Float64Value(Double)
-  Date32Value(Int)
+  Date32Value(Int32)
   Date64Value(Int64)
   TimestampValue(Int64)
   DurationValue(Int64)
@@ -26,7 +27,7 @@ pub(all) enum Value {
   FixedListValue(Array[Value?])
   StructValue(Array[Value?])
   MapValue(Array[(Value, Value?)])
-} derive(Debug)
+}
 
 ///|
 fn empty_column(field : Field) -> Column raise ArrowError {
@@ -449,7 +450,7 @@ fn Column::push_value(self : Column, field : Field, value : Value?) -> Column {
 pub struct BatchBuilder {
   priv schema : Schema
   priv columns : Array[Column]
-  priv mut rows : Int
+  priv mut rows : Int32
 }
 
 ///|
@@ -460,7 +461,7 @@ pub fn BatchBuilder::new(schema : Schema) -> BatchBuilder raise ArrowError {
 }
 
 ///|
-pub fn BatchBuilder::num_rows(self : BatchBuilder) -> Int {
+pub fn BatchBuilder::num_rows(self : BatchBuilder) -> Int32 {
   self.rows
 }
 
